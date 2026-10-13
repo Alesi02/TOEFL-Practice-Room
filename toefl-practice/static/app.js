@@ -221,8 +221,9 @@ function renderQuestion() {
       $('#next-question').disabled=true;
       return;
     }
-    body.innerHTML=`<div class="question-grid"><div><p class="question-prompt" style="font-size:14px">${esc(e.prompt)}</p>${e.passage?`<div class="passage">${esc(e.passage)}</div>`:''}</div><div><label class="sr-only" for="writing-response">Your response</label><textarea class="response" id="writing-response" spellcheck="false" autocomplete="off">${esc(a.response)}</textarea><div class="response-footer"><span id="word-count">${countWords(a.response)} words</span><span>Write in complete sentences.</span></div></div></div>`;
-    if(e.type==='worksheet')$('.response-footer span:last-child').textContent='Enter numbered answers following the source instructions.';
+    const exercisePrompt=e.type==='worksheet'&&!resources[e.sourceId]?.path?e.prompt.replace('Of the four underlined choices, one is a pronoun error.','Find the pronoun error in each sentence.'):e.prompt;
+    body.innerHTML=`<div class="question-grid"><div><p class="question-prompt" style="font-size:14px">${esc(exercisePrompt)}</p>${e.passage?`<div class="passage">${esc(e.passage)}</div>`:''}</div><div><label class="sr-only" for="writing-response">Your response</label><textarea class="response" id="writing-response" spellcheck="false" autocomplete="off">${esc(a.response)}</textarea><div class="response-footer"><span id="word-count">${countWords(a.response)} words</span><span>Write in complete sentences.</span></div></div></div>`;
+    if(e.type==='worksheet')$('.response-footer span:last-child').textContent='Enter numbered answers. For marking activities, list the selected words and corrections.';
     $('#writing-response').oninput=()=>{a.response=$('#writing-response').value;$('#word-count').textContent=countWords(a.response)+' words';saveDraft();};
   } else if(['repeat','interview','oral_activity'].includes(e.type)) {
     if(a.recording||session.phase==='answered')renderRecorded(e,a);
@@ -356,6 +357,7 @@ async function completeSpeakingResponse(){
   }finally{advancing=false;}
 }
 function renderRecorded(e,a){
+  if($('#timer-label'))$('#timer-label').textContent='SECTION';
   $('#question-body').innerHTML=`<div class="audio-stage"><div class="audio-orb">✓</div><h3>Response saved.</h3><p>Your feedback will appear when you finish the session.</p>${a.recording?`<audio controls src="/api/recordings/${esc(a.recording)}"></audio>`:`<p class="feedback-copy">${esc(a.response)}</p>`}${session.mode==='coach'?'<button class="button" id="retry-response">Try again</button>':''}</div>`;
   $('#next-question').disabled=false;
   $('#retry-response')?.addEventListener('click',()=>{session.answers[e.id]={id:e.id,response:''};session.phase='question';session.itemStarted=null;session.itemDeadline=null;renderQuestion();});
