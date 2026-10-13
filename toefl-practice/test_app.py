@@ -106,21 +106,84 @@ class GradingTests(unittest.TestCase):
                 for identifier in identifiers:
                     self.assertTrue(is_toefl_2026(server.EXERCISES[identifier]))
 
-    def test_strict_top_score_requires_range_accuracy_and_all_dimensions(self):
-        from feedback_rubric import apply_strict_rating
+    def test_official_top_band_conditions_allow_timed_typos(self):
+        from feedback_rubric import apply_rubric
         def strong():
             return {'score':5,'rubric':{'taskFulfillment':5,'development':5,'language':5},
-                    'assessment':{'complexGrammar':True,'preciseVocabulary':True,'strongCohesion':True,
-                                  'completeSupport':True,'grammarErrors':0,'mechanicalErrors':0},'corrections':[]}
+                    'assessment':{'fullyAddressesTask':True,'wellElaborated':True,'effectiveLanguageRange':True,
+                                  'clearAndCoherent':True,'nearErrorFree':True,'socialConventionsAppropriate':True,
+                                  'grammarErrors':0,'mechanicalErrors':3},'corrections':[]}
         grade=strong()
-        self.assertEqual(apply_strict_rating(grade,'An accurate developed answer.',{'type':'email'})['score'],5)
-        for limitation in ('complexGrammar','preciseVocabulary','strongCohesion','completeSupport'):
+        self.assertEqual(apply_rubric(grade,'An accurate developed answer.',{'type':'email'})['score'],5)
+        self.assertIn('ETS TOEFL iBT',grade['rubricSource'])
+        self.assertNotIn('suggestedWordTarget',grade['checklist'])
+        for limitation in ('fullyAddressesTask','wellElaborated','effectiveLanguageRange','clearAndCoherent'):
             grade=strong();grade['assessment'][limitation]=False
-            self.assertEqual(apply_strict_rating(grade,'An answer.',{'type':'interview'})['score'],4)
-        grade=strong();grade['assessment']['grammarErrors']=3
-        self.assertEqual(apply_strict_rating(grade,'An answer.',{'type':'discussion'})['score'],4)
-        grade=strong();grade['rubric']['development']=4
-        self.assertEqual(apply_strict_rating(grade,'An answer.',{'type':'email'})['score'],4)
+            self.assertEqual(apply_rubric(grade,'An answer.',{'type':'interview'})['score'],4)
+        grade=strong();grade['assessment']['nearErrorFree']=False
+        self.assertEqual(apply_rubric(grade,'An answer.',{'type':'discussion'})['score'],4)
+        grade=strong();grade['assessment']['socialConventionsAppropriate']=False
+        self.assertEqual(apply_rubric(grade,'An answer.',{'type':'email'})['score'],4)
+        grade=strong();grade['assessment']['socialConventionsAppropriate']=False
+        self.assertEqual(apply_rubric(grade,'An answer.',{'type':'discussion'})['score'],5)
+        grade=strong()
+        self.assertEqual(apply_rubric(grade,'An answer.',{'type':'interview'},{'longPauses':5})['score'],5)
+        self.assertIn('auditory intelligibility',grade['unassessedDimensions'])
+        grade=strong();grade['assessment']['frequentSubstantiveErrors']=True
+        self.assertEqual(apply_rubric(grade,'An answer.',{'type':'email'})['score'],3)
+        grade=strong();grade['assessment']['frequentSubstantiveErrors']=True;grade['assessment']['clearAndCoherent']=False
+        self.assertEqual(apply_rubric(grade,'An answer.',{'type':'discussion'})['score'],3)
+        grade=strong();grade['assessment']['frequentSubstantiveErrors']=True
+        self.assertEqual(apply_rubric(grade,'An answer.',{'type':'interview'})['score'],4)
+
+    def test_repetition_scale_preserves_verbatim_and_semantic_distinctions(self):
+        e={'type':'repeat','reference':"I'm working in the laboratory."}
+        self.assertEqual(server.repetition_rubric_grade(e,"I'm working in the laboratory.")['score'],5)
+        self.assertEqual(server.repetition_rubric_grade(e,'I am working in the laboratory.')['score'],4)
+        self.assertEqual(server.repetition_rubric_grade(e,'')['score'],0)
+        e={'type':'repeat','reference':'The laboratory will not open on Monday.'}
+        with patch.object(server,'language_feedback',return_value={'score':3,'scoreExplanation':'Negation omitted; the meaning changes.'}):
+            grade=server.repetition_rubric_grade(e,'The laboratory will open on Monday.')
+        self.assertEqual(grade['score'],3)
+        self.assertGreater(grade['accuracy'],80)
+        self.assertEqual(len(grade['scoringScale']),6)
+
+    def test_repetition_comparison_survives_missing_feedback_engine(self):
+        with patch.object(server,'language_feedback',side_effect=RuntimeError('model missing')):
+            grade=server.repetition_rubric_grade({'type':'repeat','reference':'Please return the book.'},'Please return book.')
+        self.assertIn('accuracy',grade)
+        self.assertIn('rubricScoreError',grade)
+        self.assertNotIn('score',grade)
+
+    def test_retry_recovers_a_missing_numerical_repetition_review(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(server,'PRIVATE',Path(directory)):
+            private=Path(directory);(private/'history').mkdir();(private/'recordings').mkdir()
+            identifier='d'*32;recording='e'*32+'.webm'
+            (private/'recordings'/recording).write_bytes(b'audio')
+            exercise={'id':'repeat','section':'Speaking','type':'repeat','reference':'Please return the book.'}
+            previous={'id':identifier,'created':'2026-10-13','title':'Retry','mode':'practice','rows':[
+                {'id':'repeat','section':'Speaking','type':'repeat','response':'Please return book.',
+                 'recording':recording,'grade':{'method':'transcript word comparison','accuracy':80,'rubricScoreError':'Model missing'}}]}
+            (private/'history'/(identifier+'.json')).write_text(json.dumps(previous),encoding='utf8')
+            with patch.object(server,'EXERCISES',{'repeat':exercise}),patch.object(server,'transcribe',return_value={'text':'Please return book.','metrics':{'duration':2}}),patch.object(server,'language_feedback',return_value={'score':4,'scoreExplanation':'A minor article omission preserves meaning.'}):
+                result=server.retry_result(identifier,{})
+            self.assertEqual(result['id'],identifier)
+            self.assertEqual(result['summary']['Speaking']['incomplete'],0)
+            self.assertEqual(result['summary']['Speaking']['rubricAverage'],4)
+            self.assertEqual(result['rows'][0]['grade']['score'],4)
+
+    def test_copied_writing_receives_zero_without_model(self):
+        with patch.object(server,'ensure_llama') as model:
+            grade=server.language_feedback({'type':'email','prompt':'Write an email to your professor.'},'Write an email to your professor.')
+        model.assert_not_called()
+        self.assertEqual(grade['score'],0)
+
+    def test_official_writing_criteria_do_not_apply_to_extra_essays(self):
+        from feedback_rubric import apply_rubric, guidance
+        grade=apply_rubric({'score':4},'An essay.',{'type':'essay'})
+        self.assertNotIn('rubricUrl',grade)
+        self.assertIn('Extra practice',grade['rubricSource'])
+        self.assertIn('original instructions',guidance({'type':'worksheet'}))
 
     def test_old_topics_and_workbooks_are_extra(self):
         from practice_catalog import classify

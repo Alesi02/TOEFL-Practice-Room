@@ -29,7 +29,11 @@ Speaking accepts recordings only. After starting a task, its prompt plays automa
 
 Twenty deterministic prepared forms and a randomized-test option are generated when the imported pool contains enough verified questions for all four sections. Fixed forms use current task types and approximate section timers. They do not reproduce ETS's adaptive routing or official score conversion.
 
-Writing and interview task ratings use stricter criteria adapted from TSP Prep's 2026 self-review checklists. The source does not define numerical scores: the app's 0–5 practice rating requires full task support, strong cohesion, proficient varied grammar and vocabulary, and almost no confirmed errors for a 5. Ratings are uncalibrated practice estimates. Repetition feedback uses offline transcription and word comparison. Pronunciation and intonation are not scored. Users can correct transcripts, re-evaluate, remove results, and undo removal.
+Writing and Speaking practice ratings use the official ETS TOEFL iBT **0–5 task descriptors**, separately for Email, Academic Discussion, Listen and Repeat, and Interview. Writing is judged holistically for communicative success, development, language and (for email) appropriate social conventions. Ordinary timed-writing slips are allowed; there are no fixed typo, word-count, filler-count or pause-count cutoffs.
+
+Listen and Repeat retains word-edit feedback and adds a numerical **content estimate**. Changed meaning is distinguished from minor wording changes; word accuracy is not converted directly into a score. Numerical review of non-verbatim repetition uses the local feedback model. If that model is unavailable, word comparison remains available. Speaking estimates cover recognized content/language; auditory intelligibility, pronunciation, rhythm and intonation are unassessed. Diagnostic subscores are app feedback, not separate official ETS scores. No task estimate is an official or calibrated 1–6 section band. Each new review includes its rubric source, band explanation and complete task scale. Extra essays and worksheets retain their own source instructions and practice grading. Recognition errors can be corrected before re-evaluation.
+
+TOEFL Primary scoring guides apply to a different test. This app uses the linked TOEFL iBT Speaking guide instead. Users can re-evaluate saved responses to use the current grading criteria; existing feedback is retained until re-evaluation.
 
 An exercises-only private edition can retain the functioning question bank and compressed prompt clips while excluding original PDFs, long recordings, conversion scripts and intermediate extraction files. Its first setup installs speech dependencies and downloads grading models once. Personal history remains separate.
 
@@ -43,6 +47,8 @@ App files are in `toefl-practice/`. Run `python toefl-practice/server.py` from a
 
 ## References
 
+- [ETS TOEFL iBT Writing rubric](https://www.ets.org/content/dam/ets-org/pdfs/toefl/writing-rubrics.pdf)
+- [ETS TOEFL iBT Speaking rubric](https://www.ets.org/content/dam/ets-org/pdfs/toefl/speaking-rubrics.pdf)
 - [ETS current test format](https://www.ets.org/toefl/test-takers/ibt/about/content.html)
 - [Faster Whisper](https://github.com/SYSTRAN/faster-whisper)
 - [llama.cpp](https://github.com/ggml-org/llama.cpp)
