@@ -3,6 +3,7 @@ from __future__ import annotations
 import atexit
 import concurrent.futures
 import io
+import importlib
 import json
 import mimetypes
 import os
@@ -99,6 +100,20 @@ def media_path(source):
 def read_audio(path):
     from faster_whisper.audio import decode_audio
     return decode_audio(str(path), sampling_rate=16000)
+
+def speech_status():
+    """Check the installed decoder and model, rather than reporting files alone."""
+    try:
+        importlib.invalidate_caches()
+        importlib.import_module('faster_whisper.audio')
+        importlib.import_module('faster_whisper').WhisperModel
+        model = BASE / 'models/whisper-base.en'
+        missing = [name for name in ('model.bin', 'config.json', 'tokenizer.json') if not (model / name).is_file()]
+        if missing:
+            raise RuntimeError('Local speech model is incomplete. Run Setup grading models.cmd.')
+        return {'speechAvailable': True, 'speechError': None}
+    except Exception as error:
+        return {'speechAvailable': False, 'speechError': str(error)}
 
 def audio_metrics(samples):
     import numpy as np
@@ -259,7 +274,7 @@ def recording_path(identifier):
         raise ValueError("Recording not found")
     return path
 
-def evaluate_attempt(payload, job):
+def evaluate_attempt(payload, job, previous=None):
     rows = []
     items = payload.get("items", [])
     if len(items) > 250:
@@ -269,6 +284,11 @@ def evaluate_attempt(payload, job):
         job["completed"] = index
         exercise = EXERCISES.get(entry.get("id"))
         if exercise is None:
+            continue
+        # A retry keeps completed feedback and only repeats failed evaluations.
+        saved_row = next((row for row in previous['rows'] if row['id'] == exercise['id']), None) if previous else None
+        if saved_row and not saved_row['grade'].get('error'):
+            rows.append(saved_row)
             continue
         response = entry.get("response", "")
         audio = None
@@ -308,9 +328,30 @@ def evaluate_attempt(payload, job):
             if value not in priorities:
                 priorities.append(value)
     result = {"id": uuid.uuid4().hex, "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "mode": str(payload.get("mode", "practice")), "title": str(payload.get("title", "Practice session"))[:200], "summary": summary, "priorities": priorities[:6], "rows": rows, "disclaimer": "Objective answers use source keys. Open responses use an uncalibrated local model. Repetition uses machine-transcribed word comparison. No score is an official TOEFL band; no proprietary adaptive scoring or pronunciation scoring is reproduced."}
-    (PRIVATE / "history" / (result["id"] + ".json")).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    if previous:
+        result['id'], result['created'] = previous['id'], previous['created']
+    target = PRIVATE / 'history' / (result['id'] + '.json')
+    temporary = target.with_suffix('.tmp')
+    temporary.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
+    temporary.replace(target)
     job["completed"] = len(items)
     return result
+
+def retry_result(identifier, job):
+    if not re.fullmatch(r'[a-f0-9]{32}', identifier):
+        raise ValueError('Invalid session')
+    target = PRIVATE / 'history' / (identifier + '.json')
+    previous = json.loads(target.read_text(encoding='utf-8'))
+    # Retain the original feedback for recovery; recordings remain untouched.
+    backup = PRIVATE / 'retry-backups' / (identifier + '.json')
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    if not backup.exists():
+        backup.write_bytes(target.read_bytes())
+    payload = {'title': previous['title'], 'mode': previous['mode'], 'items': [
+        {key: row.get(key) for key in ('id', 'response', 'recording', 'elapsed')}
+        for row in previous['rows']
+    ]}
+    return evaluate_attempt(payload, job, previous=previous)
 
 def submit_job(function):
     identifier = uuid.uuid4().hex
@@ -445,7 +486,7 @@ class Handler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(parts.query)
         try:
             if parts.path == "/api/health":
-                return self.json({"ok": True, "speechAvailable": (BASE / "models/whisper-base.en/model.bin").exists(), "feedbackAvailable": FEEDBACK_MODEL.exists(), "localOnly": True, "exerciseCount": len(EXERCISES), "resourceCount": len(RESOURCES)})
+                return self.json({"ok": True, **speech_status(), "feedbackAvailable": FEEDBACK_MODEL.exists(), "localOnly": True, "exerciseCount": len(EXERCISES), "resourceCount": len(RESOURCES)})
             if parts.path == "/api/catalog":
                 return self.json({**CATALOG, "exercises": [public_exercise(x) for x in CATALOG["exercises"]]})
             if parts.path.startswith("/api/jobs/"):
@@ -493,6 +534,9 @@ class Handler(BaseHTTPRequestHandler):
                 (PRIVATE / "recordings" / identifier).write_bytes(self.rfile.read(size))
                 return self.json({"id": identifier})
             payload = json.loads(self.rfile.read(size) or b"{}")
+            retry_action = re.fullmatch(r'/api/history/([a-f0-9]{32})/retry', self.path)
+            if retry_action:
+                return self.json({'jobId': submit_job(lambda job: retry_result(retry_action[1], job))}, 202)
             result_action = re.fullmatch(r'/api/history/([a-f0-9]{32})/(remove|restore)', self.path)
             if result_action:
                 return self.json(set_result_removed(result_action[1], result_action[2] == 'remove'))

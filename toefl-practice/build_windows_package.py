@@ -6,6 +6,7 @@ excluded. Models are installed with the included one-time setup launcher.
 import argparse
 import hashlib
 import json
+import subprocess
 import urllib.parse
 import zipfile
 from pathlib import Path
@@ -52,6 +53,8 @@ def main():
         files.pop('toefl-practice/README.md', None)
     if 'toefl-practice/.runtime/python.exe' not in files:
         raise ValueError('Run prepare_windows_runtime.py before packaging')
+    # Verify the decoder in the actual bundled runtime before producing a ZIP.
+    subprocess.run([str(BASE/'.runtime/python.exe'), '-c', 'import faster_whisper.audio; from faster_whisper import WhisperModel; import av'], cwd=BASE, check=True)
     root='TOEFL Practice Room/'
     with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=1,allowZip64=True) as archive:
         for index,(relative,path) in enumerate(sorted(files.items()),1):

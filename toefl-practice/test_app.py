@@ -1,6 +1,8 @@
 """Focused checks for grading, provenance protection, and real local audio recognition."""
 import unittest
 import tempfile
+import json
+import wave
 from pathlib import Path
 from unittest.mock import patch
 import server
@@ -43,6 +45,52 @@ class GradingTests(unittest.TestCase):
         self.assertEqual(grade['wordEdits'],1)
         self.assertIn('all',str(grade['changes']))
         self.assertEqual(server.repetition_grade('Welcome to the library.','')['accuracy'],0)
+
+    def test_speech_status_detects_a_broken_decoder(self):
+        with patch.object(server.importlib, 'import_module', side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")):
+            status=server.speech_status()
+        self.assertFalse(status['speechAvailable'])
+        self.assertIn('faster_whisper.audio',status['speechError'])
+
+    def test_audio_decoder_reads_a_real_wave_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'recording.wav'
+            with wave.open(str(path),'wb') as recording:
+                recording.setnchannels(1)
+                recording.setsampwidth(2)
+                recording.setframerate(16000)
+                recording.writeframes(b'\x00\x00'*1600)
+            samples=server.read_audio(path)
+            self.assertEqual(len(samples),1600)
+            self.assertTrue(server.audio_metrics(samples)['silent'])
+
+    def test_retry_recognizes_failed_recordings_and_keeps_completed_feedback(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(server,'PRIVATE',Path(directory)):
+            private=Path(directory)
+            (private/'history').mkdir()
+            (private/'recordings').mkdir()
+            recording='b'*32+'.webm'
+            (private/'recordings'/recording).write_bytes(b'recorded audio')
+            identifier='c'*32
+            completed={'id':'read','section':'Reading','type':'mcq','grade':{'points':1,'total':1,'method':'source answer key','improvements':[]},'response':'B'}
+            failed={'id':'speak','section':'Speaking','type':'repeat','grade':{'error':'decoder unavailable'},'recording':recording,'response':'','elapsed':10}
+            previous={'id':identifier,'created':'2026-10-01','title':'Saved session','mode':'practice','rows':[completed,failed]}
+            target=private/'history'/(identifier+'.json')
+            original=json.dumps(previous).encode()
+            target.write_bytes(original)
+            exercises={'read':{'id':'read','section':'Reading','type':'mcq','answer':'B'},'speak':{'id':'speak','section':'Speaking','type':'repeat','reference':'Welcome to the library.'}}
+            recognized={'text':'Welcome to the library.','metrics':{'duration':2},'segments':[]}
+            with patch.object(server,'EXERCISES',exercises), patch.object(server,'transcribe',return_value=recognized) as transcription:
+                result=server.retry_result(identifier,{})
+            transcription.assert_called_once_with(private/'recordings'/recording)
+            self.assertEqual(result['id'],identifier)
+            self.assertEqual(result['created'],previous['created'])
+            self.assertEqual(result['rows'][0],completed)
+            self.assertEqual(result['rows'][1]['grade']['accuracy'],100)
+            self.assertEqual(result['summary']['Speaking']['incomplete'],0)
+            self.assertEqual((private/'retry-backups'/(identifier+'.json')).read_bytes(),original)
+            self.assertEqual(len(list((private/'history').glob('*.json'))),1)
+            self.assertTrue((private/'recordings'/recording).exists())
 
     def test_answers_are_not_in_public_catalog(self):
         for exercise in server.CATALOG['exercises']:
