@@ -1,0 +1,14 @@
+output/
+tmp/
+Reading/
+Listening/
+Speaking/
+Writing/
+*.pdf
+*.flac
+*.mp3
+*.wav
+*.zip
+*.webm
+*.ogg
+*.m4a
