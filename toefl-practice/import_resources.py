@@ -393,6 +393,36 @@ def main():
         questioncounts={s:sum(e.get('questionCount',1) for e in EXERCISES if e['id'] in ids) for s,ids in sections.items()}
         TESTS.append(dict(id=tid,title=f'TST Prep 2026 · Complete Test {num}',sections=sections,questionCounts=questioncounts,sectionOrder=['Reading','Listening','Speaking','Writing'],sourceId=resource(src)['id'],adaptive=False,missingItemCounts=missing,description='Original printed modules in their supplied order, with missing audio items excluded. The PDF supplies one fixed Module 2 route; computer-adaptive routing is not reproduced.'))
     import_ets()
+    from convert_documents import convert
+    additional,document_coverage=convert({'resources':RESOURCES,'exercises':EXERCISES},ROOT,OUT)
+    EXERCISES.extend(additional)
+    audio_conversion=OUT/'audio-exercises.json'
+    audio_coverage=[]
+    if audio_conversion.exists():
+        converted=json.loads(audio_conversion.read_text(encoding='utf-8'))
+        EXERCISES.extend(converted['exercises'])
+        audio_coverage=converted['coverage']
+    speech_manifest=[]
+    for exercise in EXERCISES:
+        if exercise['section'] in {'Listening','Speaking'} and not exercise.get('audio') and not exercise.get('textPrompt'):
+            stimulus=exercise.get('ttsText') or (exercise.get('prompt') if exercise['type']=='interview' else exercise.get('reference'))
+            if stimulus:
+                relative='toefl-practice/cache/synthesized/'+exercise['id']+'.wav'
+                exercise['audio']=relative
+                exercise['audioAvailability']='synthesized'
+                exercise['audioMethod']='Synthesized voice reading the printed source script; original audio was not supplied.'
+                speech_manifest.append({'id':exercise['id'],'text':stimulus,'path':relative})
+    OUT.mkdir(parents=True,exist_ok=True)
+    (OUT/'speech-manifest.json').write_text(json.dumps(speech_manifest,ensure_ascii=False),encoding='utf-8')
+    (OUT/'conversion-coverage.json').write_text(json.dumps({'documents':document_coverage,'recordings':audio_coverage},ensure_ascii=False,indent=2),encoding='utf-8')
+    for test in TESTS:
+        test['sections']={section:[e['id'] for e in EXERCISES if e.get('testId')==test['id'] and e['section']==section and (section not in {'Listening','Speaking'} or e.get('audio') or e.get('textPrompt'))] for section in ['Reading','Listening','Writing','Speaking']}
+        test['questionCounts']={section:sum(e.get('questionCount',1) for e in EXERCISES if e['id'] in ids) for section,ids in test['sections'].items()}
+        if test.get('partial'):
+            test['partial']=False
+            test['availableSections']=['Reading','Listening','Writing','Speaking']
+            test['title']=test['title'].replace(' · Reading & Writing',' · synthesized script audio')
+            test['description']='Original printed question order. Missing prompt audio is synthesized from the printed script and labeled; the original voices and adaptive routing are not reproduced.'
     # Validate that all objectively graded answers belong to their visible options,
     # and tag the printed module boundaries without creating alternative routes.
     for e in EXERCISES:
@@ -408,6 +438,8 @@ def main():
     counts=Counter(e['sourceId'] for e in EXERCISES)
     for r in RESOURCES:r['exerciseCount']=counts[r['id']]
     report=dict(resourceCount=len(RESOURCES),exerciseCount=len(EXERCISES),bySection=dict(Counter(e['section'] for e in EXERCISES)),byType=dict(Counter(e['type'] for e in EXERCISES)),audioFiles=sum(r['kind']=='audio' for r in RESOURCES),warnings=REPORT,notes=['All original materials remain linked as local references. Legacy exercises are not converted to the 2026 simulation.','Official ETS paper PDFs were OCR-extracted; objective answer tables, gap paragraphs, and sentence templates were visually verified. Reading and Writing are playable; their unsupplied audio remains reference-only.','The 294 local FLAC files are full practice recordings with no verified sentence/question transcript mapping; indexed as audio drills, not standalone scored questions.','MP3 audio URLs are copied from original PDF link annotations; network access is needed unless cached by the application.','Practice scoring is not an official ETS score. Printed advanced sentence-placement questions retain the publisher’s A–D representation.','Repeat drills use a 12-second response cap; this is a conservative practice cap and is not per-item official timing.'])
+    report['notes']=['Actual older questions and workbook activities are interactive supplementary practice; instructional prose, templates, vocabulary lists and learner notes remain references.','Saved recordings are split into original prompt clips; comparison transcripts are machine generated and can require correction.','Printed scripts without original audio receive clearly labeled synthesized practice audio.','Original source keys drive objective grading; worksheets and open responses receive uncalibrated local feedback.','Prepared full tests select current-format tasks; supplemental historical tasks are excluded.']
+    report['conversionCoverage']={'documents':len(document_coverage),'recordings':len(audio_coverage),'recordingPrompts':sum(x['prompts'] for x in audio_coverage),'recordingsNeedingReview':sum(x['needsReview'] for x in audio_coverage)}
     OUT.mkdir(parents=True,exist_ok=True)
     (OUT/'catalog.json').write_text(json.dumps(dict(resources=RESOURCES,exercises=EXERCISES,tests=TESTS,importReport=report),ensure_ascii=False,indent=2),encoding='utf8')
     print(json.dumps(report,ensure_ascii=False,indent=2))

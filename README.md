@@ -19,11 +19,19 @@ The portable package includes Python and its runtime dependencies; Codex and a s
 
 ## Bring your own materials
 
-The importer supports the saved 2026 TST question-bank/test layouts and preserves other PDFs/audio as study references. Put `Reading`, `Listening`, `Writing`, and `Speaking` folders beside `toefl-practice`. The supported bank filenames are listed in `import_resources.py`. Other exercise sets can use a private `data/catalog.json` with the same schema. Scanned ETS exercises require verified OCR data; the public repository does not include extracted copyrighted text.
+The importer supports the existing TST question banks and complete tests, older Speaking banks, the supported grammar/phrasal-verb workbooks, and the ETS Speaking lesson plan. Put `Reading`, `Listening`, `Writing`, and `Speaking` folders beside `toefl-practice`, preserving the supported filenames. Test PDFs stored at the project root must also be copied. This is a parser for those known layouts, not a universal importer for any PDF or file format. Other exercise sets can use a private `data/catalog.json` with the same schema. Scanned/image exercises need verified extraction data; the public repository does not include copyrighted extracted text.
+
+With the local speech model installed, Import exercises automatically splits saved Speaking recordings into individual prompt clips. Instructions, sample answers, and closing messages are excluded. Quiet recordings receive a second recognition pass. References are machine-transcribed and can be corrected from the feedback page after checking the original audio. Printed scripts with no original recording receive labeled synthesized audio using an installed English Windows voice. Templates, vocabulary lists, prose explanations, rubrics, schedules, and learner notes do not become exercises.
+
+The Material filter has two groups: **TOEFL 2026 PRACTICE** and **Extra**. Older essay tasks, workbooks and activities outside the current task formats belong to Extra. Prepared and randomized full tests select TOEFL 2026 exercises only. Worksheets preserve their question instructions and provide an editor for numbered answers; source answer guides stay hidden during the attempt. Non-exercise explanations, vocabulary lists and templates are not converted into drills.
+
+Speaking accepts recordings only. After starting a task, its prompt plays automatically and recording begins immediately when playback ends, without preparation time. Build a Sentence uses drag-and-drop tiles rather than clicking words or typing the answer; a keyboard alternative is provided for accessibility.
 
 Twenty deterministic prepared forms and a randomized-test option are generated when the imported pool contains enough verified questions for all four sections. Fixed forms use current task types and approximate section timers. They do not reproduce ETS's adaptive routing or official score conversion.
 
-Writing and interview task ratings are uncalibrated practice estimates. Repetition feedback uses offline transcription and word comparison. Pronunciation and intonation do not receive validated scores. Users can correct transcripts, re-evaluate, remove results, and undo removal.
+Writing and interview task ratings use stricter criteria adapted from TSP Prep's 2026 self-review checklists. The source does not define numerical scores: the app's 0–5 practice rating requires full task support, strong cohesion, proficient varied grammar and vocabulary, and almost no confirmed errors for a 5. Ratings are uncalibrated practice estimates. Repetition feedback uses offline transcription and word comparison. Pronunciation and intonation are not scored. Users can correct transcripts, re-evaluate, remove results, and undo removal.
+
+An exercises-only private edition can retain the functioning question bank and compressed prompt clips while excluding original PDFs, long recordings, conversion scripts and intermediate extraction files. Its first setup installs speech dependencies and downloads grading models once. Personal history remains separate.
 
 ## Keep personal results private
 

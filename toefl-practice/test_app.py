@@ -95,8 +95,63 @@ class GradingTests(unittest.TestCase):
     def test_answers_are_not_in_public_catalog(self):
         for exercise in server.CATALOG['exercises']:
             public=server.public_exercise(exercise)
-            for key in ['answer','reference','sampleAnswer','explanation']:
+            for key in ['answer','reference','sampleAnswer','explanation','answerGuide','ttsText']:
                 self.assertNotIn(key,public)
+
+    def test_supplementary_exercises_are_excluded_from_full_tests(self):
+        from practice_catalog import is_toefl_2026
+        for test in server.CATALOG['tests']:
+            if not test.get('prepared'):continue
+            for identifiers in test['sections'].values():
+                for identifier in identifiers:
+                    self.assertTrue(is_toefl_2026(server.EXERCISES[identifier]))
+
+    def test_strict_top_score_requires_range_accuracy_and_all_dimensions(self):
+        from feedback_rubric import apply_strict_rating
+        def strong():
+            return {'score':5,'rubric':{'taskFulfillment':5,'development':5,'language':5},
+                    'assessment':{'complexGrammar':True,'preciseVocabulary':True,'strongCohesion':True,
+                                  'completeSupport':True,'grammarErrors':0,'mechanicalErrors':0},'corrections':[]}
+        grade=strong()
+        self.assertEqual(apply_strict_rating(grade,'An accurate developed answer.',{'type':'email'})['score'],5)
+        for limitation in ('complexGrammar','preciseVocabulary','strongCohesion','completeSupport'):
+            grade=strong();grade['assessment'][limitation]=False
+            self.assertEqual(apply_strict_rating(grade,'An answer.',{'type':'interview'})['score'],4)
+        grade=strong();grade['assessment']['grammarErrors']=3
+        self.assertEqual(apply_strict_rating(grade,'An answer.',{'type':'discussion'})['score'],4)
+        grade=strong();grade['rubric']['development']=4
+        self.assertEqual(apply_strict_rating(grade,'An answer.',{'type':'email'})['score'],4)
+
+    def test_old_topics_and_workbooks_are_extra(self):
+        from practice_catalog import classify
+        self.assertEqual(classify({'section':'Speaking','type':'interview','textPrompt':True})['practiceCategory'],'extra')
+        self.assertEqual(classify({'section':'Writing','type':'essay'})['practiceCategory'],'extra')
+        self.assertEqual(classify({'section':'Reading','type':'worksheet'})['practiceCategory'],'extra')
+        self.assertEqual(classify({'section':'Speaking','type':'interview','audio':'prompt.opus'})['practiceCategory'],'toefl2026')
+
+    def test_audio_import_removes_video_instructions_and_sample_answers(self):
+        from convert_audio import prompts
+        chunks=[("Let's begin.",0),("This is an advanced practice video with longer sentences.",12),("Welcome to the campus library.",30),("Use these sample answers for ideas only.",70)]
+        words=[]
+        for text,start in chunks:
+            words.extend({'word':' '+word,'start':start+i*.2,'end':start+(i+1)*.2} for i,word in enumerate(text.split()))
+        clips=prompts({'duration':100,'segments':[{'words':words}]},'repeat')
+        self.assertEqual([clip['text'] for clip in clips],['Welcome to the campus library.'])
+
+    def test_conversion_preserves_original_question_bank_and_ignores_non_exercises(self):
+        if not any(e['id'].startswith('extra-') for e in server.CATALOG['exercises']):
+            self.skipTest('Expanded private material is not part of the public source checkout')
+        source=next(r['id'] for r in server.CATALOG['resources'] if r['path']=='Speaking/GfG- Speaking-Questions.pdf')
+        self.assertEqual(sum(e['sourceId']==source for e in server.CATALOG['exercises']),180)
+        for path in ('Speaking/Speaking Vocabulary.pdf','Writing/Writing Vocabulary.pdf','Phrasal verbs.pdf','TOEFL-three-week-schedule.md','Writing/Practicando escritura.txt'):
+            resource=next(r for r in server.CATALOG['resources'] if r['path']==path)
+            self.assertEqual(resource['exerciseCount'],0)
+
+    def test_worksheet_contains_questions_not_just_an_instruction_header(self):
+        for exercise in server.CATALOG['exercises']:
+            if exercise['type']=='worksheet':
+                self.assertGreater(len(exercise['prompt']),300,exercise['title'])
+                self.assertNotIn('Exercise Answer Key',exercise['prompt'])
 
     def test_local_files_are_allowlisted(self):
         with self.assertRaises(ValueError):server.media_path('../secret.txt')

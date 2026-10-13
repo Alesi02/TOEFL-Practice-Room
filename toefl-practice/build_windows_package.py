@@ -29,11 +29,15 @@ def package_files(include_materials=True):
         for path in (BASE/folder).rglob('*'):
             if path.is_file() and '__pycache__' not in path.parts and path.suffix not in {'.pyc','.pyo'}:
                 files['toefl-practice/'+path.relative_to(BASE).as_posix()] = path
-    for name in ('catalog.json','ets_sources.json','prepared-tests.json','validation_report.json') if include_materials else []:
+    for name in ('catalog.json','ets_sources.json','prepared-tests.json','validation_report.json','audio-exercises.json','speech-manifest.json','conversion-coverage.json','extra-source.json','reference-overrides.json') if include_materials else []:
         path = BASE/'data'/name
         if path.is_file(): files['toefl-practice/data/'+name] = path
     for source in {x.get('audio') for x in catalog['exercises'] if x.get('audio')} if include_materials else []:
-        if not source.startswith(('http://','https://')): continue
+        if not source.startswith(('http://','https://')):
+            path=(ROOT/source).resolve()
+            if not path.is_relative_to(ROOT) or not path.is_file():raise ValueError('Missing local prompt: '+source)
+            files[source.replace('\\','/')]=path
+            continue
         suffix = Path(urllib.parse.urlparse(source).path).suffix or '.mp3'
         name = hashlib.sha256(source.encode()).hexdigest()+suffix
         path = BASE/'cache'/name

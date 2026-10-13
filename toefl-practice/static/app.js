@@ -3,6 +3,8 @@ const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const typeName = {mcq:'Choose an answer',complete_words:'Complete the Words',sentence:'Build a Sentence',email:'Write an Email',discussion:'Academic Discussion',repeat:'Listen and Repeat',interview:'Take an Interview'};
+Object.assign(typeName,{essay:'Essay practice',worksheet:'Workbook exercise',oral_activity:'Speaking activity'});
+let practicePool='toefl2026';
 const descriptions = {Reading:'Complete words, read everyday texts, and work through academic passages.',Listening:'Follow short responses, conversations, announcements, and academic talks.',Writing:'Build sentences, write a purposeful email, and contribute to a discussion.',Speaking:'Repeat sentences accurately and answer interview questions with confidence.'};
 const baseTimes = {Reading:30,Listening:29,Writing:23,Speaking:8};
 const icons = {Reading:'Aa',Listening:'♫',Writing:'✎',Speaking:'◉'};
@@ -21,7 +23,7 @@ async function api(path, data) {
 function toast(message) { $('#toast').textContent=message; $('#toast').style.display='block'; clearTimeout(toast.timeout); toast.timeout=setTimeout(()=>$('#toast').style.display='none',6500); }
 function mediaUrl(source) { return '/api/media?source='+encodeURIComponent(source); }
 function formatTime(seconds) { seconds=Math.max(0,Math.ceil(seconds)); return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`; }
-function sourceLink(e) { const r=resources[e.sourceId]; return r ? `<a href="${mediaUrl(r.path)}${e.sourcePage?'#page='+e.sourcePage:''}" target="_blank" rel="noreferrer">Original resource${e.sourcePage?' · page '+e.sourcePage:''} ↗</a>` : ''; }
+function sourceLink(e) { const r=resources[e.sourceId]; return r?.path ? `<a href="${mediaUrl(r.path)}${e.sourcePage?'#page='+e.sourcePage:''}" target="_blank" rel="noreferrer">Original resource${e.sourcePage?' · page '+e.sourcePage:''} ↗</a>` : r ? `Source: ${esc(r.title)}` : ''; }
 function loading(message) { content.innerHTML=`<div class="loading"><div class="spinner"></div><h2>${esc(message)}</h2><p class="small" id="job-message">Working on this computer.</p></div>`; }
 async function waitJob(id) {
   for (;;) {
@@ -32,7 +34,8 @@ async function waitJob(id) {
     await new Promise(r=>setTimeout(r,1000));
   }
 }
-function usable(e) { return !['Listening','Speaking'].includes(e.section) || Boolean(e.audio); }
+function usable(e) { return !['Listening','Speaking'].includes(e.section) || Boolean(e.audio)||Boolean(e.textPrompt); }
+function inPracticePool(e){return e.practiceCategory===practicePool;}
 function setNav(view) { $$('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===view)); }
 async function navigate(view) {
   if (session) { toast('Finish or save this session before switching views.'); return; }
@@ -55,9 +58,14 @@ function bindResume() {
 function renderPractice() {
   const total=catalog.exercises.filter(usable).length;
   content.innerHTML=hero('A LITTLE PRACTICE, EVERY DAY','Make room for progress.','Choose a section, practise under a timer, and turn your mistakes into your next practice session.',`<div class="hero-note"><strong>${total}</strong><span>exercises from your resources</span></div>`)+resumeBanner()+
-    `<div class="grid">${['Reading','Listening','Writing','Speaking'].map(section=>`<article class="section-card ${selectedSection===section?'selected':''}" data-section="${section}"><div class="section-top"><span class="section-symbol">${icons[section]}</span><span class="section-meta">${baseTimes[section]} min · full section</span></div><h2>${section}</h2><p>${descriptions[section]}</p><div class="section-bottom"><span>${catalog.exercises.filter(e=>e.section===section&&usable(e)).length} exercises available</span><button data-choose="${section}">Choose section →</button></div></article>`).join('')}</div>`+
-    `<div class="panel" style="margin-top:22px"><h3>Your practice session</h3><div class="practice-options"><div class="field"><label for="task-type">TASK</label><select id="task-type"><option value="all">Mixed ${selectedSection.toLowerCase()} practice</option>${[...new Set(catalog.exercises.filter(e=>e.section===selectedSection&&usable(e)).map(e=>e.type))].map(t=>`<option value="${t}">${typeName[t]}</option>`).join('')}</select></div><div class="field"><label for="set-size">SET SIZE</label><select id="set-size"><option value="short">Short set</option><option value="section">Full section practice</option><option value="single">One exercise</option></select></div><div class="field"><label for="practice-mode">MODE</label><select id="practice-mode"><option value="timed">Timed · one attempt</option><option value="coach">Coaching · replay & pause</option></select></div><div class="field"><label for="response-mode">SPEAKING RESPONSE</label><select id="response-mode"><option value="record">Record my voice</option><option value="text">Type a transcript</option></select></div><button class="button primary large" id="start-practice">Start practice →</button></div><p class="mode-note">Timed mode hides answers until the end. Full-section timers follow the 2026 base times; short-set timers are practice budgets. Source PDFs cannot reproduce the test's adaptive routing.</p></div>`+
+    `<div class="grid">${['Reading','Listening','Writing','Speaking'].map(section=>`<article class="section-card ${selectedSection===section?'selected':''}" data-section="${section}"><div class="section-top"><span class="section-symbol">${icons[section]}</span><span class="section-meta">${baseTimes[section]} min · full section</span></div><h2>${section}</h2><p>${descriptions[section]}</p><div class="section-bottom"><span>${catalog.exercises.filter(e=>e.section===section&&usable(e)&&inPracticePool(e)).length} exercises available</span><button data-choose="${section}">Choose section →</button></div></article>`).join('')}</div>`+
+    `<div class="panel" style="margin-top:22px"><h3>Your practice session</h3><div class="practice-options"><div class="field"><label for="task-type">TASK</label><select id="task-type"><option value="all">Mixed ${selectedSection.toLowerCase()} practice</option>${[...new Set(catalog.exercises.filter(e=>e.section===selectedSection&&usable(e)).map(e=>e.type))].map(t=>`<option value="${t}">${typeName[t]}</option>`).join('')}</select></div><div class="field"><label for="set-size">SET SIZE</label><select id="set-size"><option value="short">Short set</option><option value="section">Full section practice</option><option value="single">One exercise</option></select></div><div class="field"><label for="practice-mode">MODE</label><select id="practice-mode"><option value="timed">Timed · one attempt</option><option value="coach">Coaching · replay & pause</option></select></div><button class="button primary large" id="start-practice">Start practice →</button></div><p class="mode-note">Timed mode hides answers until the end. Full-section timers follow the 2026 base times; short-set timers are practice budgets. Source PDFs cannot reproduce the test's adaptive routing.</p></div>`+
     `<div class="practice-tip"><span>↗</span><div><h3>Give Speaking a little space every day.</h3><p>Try seven repetition sentences and four interview questions. Review your first attempt before recording an improved version.</p></div></div>`;
+  $('#task-type').closest('.field').insertAdjacentHTML('beforebegin','<div class="field"><label for="exercise-pool">MATERIAL</label><select id="exercise-pool"><option value="toefl2026">TOEFL 2026 PRACTICE</option><option value="extra">Extra</option></select></div>');
+  $('#exercise-pool').value=practicePool;
+  $('#exercise-pool').onchange=()=>{practicePool=$('#exercise-pool').value;renderPractice();};
+  $('#task-type').innerHTML='<option value="all">Mixed '+selectedSection.toLowerCase()+' practice</option>'+[...new Set(catalog.exercises.filter(e=>e.section===selectedSection&&usable(e)&&inPracticePool(e)).map(e=>e.type))].map(t=>`<option value="${t}">${typeName[t]}</option>`).join('');
+  content.insertAdjacentHTML('beforeend','<p class="small">Extra includes essays, workbooks, older task formats, and other activities. Synthesized prompts and machine-transcribed references are labeled. Random and prepared tests use TOEFL 2026 tasks only.</p>');
   $$('[data-choose]').forEach(b=>b.onclick=()=>{selectedSection=b.dataset.choose;renderPractice();});
   $('#start-practice').onclick=()=>startPractice().catch(showStartError);
   bindResume();
@@ -71,16 +79,18 @@ function freshGroup(list, count) {
   return list.filter(x=>(x.groupId||x.id)===chosen).slice(0,count);
 }
 function practiceSelection(section,type,size) {
-  let list=catalog.exercises.filter(e=>e.section===section&&usable(e)&&(!e.id.startsWith('clip-'))&&(type==='all'||e.type===type));
+  let list=catalog.exercises.filter(e=>e.section===section&&usable(e)&&inPracticePool(e)&&(!e.id.startsWith('clip-'))&&(type==='all'||e.type===type));
   // Prefer banks over rehearsal materials, keeping full tests fresh.
   const banks=list.filter(e=>!e.testId); if(banks.length)list=banks;
   if(section==='Speaking') {
+    if(type==='oral_activity')return shuffle(list).slice(0,size==='single'?1:3);
     if(type==='repeat')return freshGroup(list, size==='single'?1:7);
     if(type==='interview')return freshGroup(list, size==='single'?1:4);
-    return [...freshGroup(list.filter(e=>e.type==='repeat'),7),...freshGroup(list.filter(e=>e.type==='interview'),4)];
+    const chosen=[...freshGroup(list.filter(e=>e.type==='repeat'),7),...freshGroup(list.filter(e=>e.type==='interview'),4)];
+    return chosen.length?chosen:shuffle(list).slice(0,size==='single'?1:3);
   }
   if(section==='Writing') {
-    if(type==='all')return [...shuffle(list.filter(e=>e.type==='sentence')).slice(0,size==='short'?5:10),...shuffle(list.filter(e=>e.type==='email')).slice(0,1),...shuffle(list.filter(e=>e.type==='discussion')).slice(0,1)];
+    if(type==='all')return [...shuffle(list.filter(e=>e.type==='sentence')).slice(0,size==='short'?5:10),...shuffle(list.filter(e=>e.type==='email')).slice(0,1),...shuffle(list.filter(e=>e.type==='discussion')).slice(0,1),...shuffle(list.filter(e=>['essay','worksheet'].includes(e.type))).slice(0,1)];
     return shuffle(list).slice(0,size==='single'||['email','discussion'].includes(type)?1:10);
   }
   if(section==='Listening') {
@@ -99,7 +109,7 @@ function makeBlocks(items, full=false) {
   for(const section of ['Reading','Listening','Writing','Speaking']) {
     const list=items.filter(e=>e.section===section);if(!list.length)continue;
     if(section==='Writing') {
-      for(const type of ['sentence','email','discussion']) {
+      for(const type of ['sentence','email','discussion','essay','worksheet']) {
         const subset=list.filter(e=>e.type===type);if(!subset.length)continue;
         if(type==='sentence')blocks.push({section,type,label:'Build a Sentence',ids:subset.map(e=>e.id),seconds:full?360:Math.min(360,subset.length*36)});
         else for(const e of subset)blocks.push({section,type,label:typeName[type],ids:[e.id],seconds:e.seconds||({email:420,discussion:600}[type])});
@@ -115,12 +125,12 @@ async function startPractice() {
   const size=$('#set-size').value, type=$('#task-type').value;
   const items=practiceSelection(selectedSection,type,size);
   if(!items.length)throw new Error('No verified exercises are available for this selection.');
-  await launchSession(makeBlocks(items,size==='section'),`${selectedSection} · ${type==='all'?'Mixed practice':typeName[type]}`,$('#practice-mode').value,$('#response-mode').value);
+  await launchSession(makeBlocks(items,size==='section'),`${selectedSection} · ${type==='all'?'Mixed practice':typeName[type]}`,$('#practice-mode').value,'record');
 }
 function renderTests() {
   if(!catalog.tests.length){content.innerHTML=hero('YOUR TEST LIBRARY','Add your practice materials.','Prepared and randomized tests become available once you import enough verified exercises for all four sections.')+'<div class="panel"><p>Run Import exercises.cmd after adding supported PDFs and audio, or copy your own private exercise bundle into the app folder.</p><button class="button" id="view-materials">View resources →</button></div>';$('#view-materials').onclick=()=>navigate('resources');return;}
   content.innerHTML=hero('REHEARSE THE WHOLE EXPERIENCE','Build your test-day rhythm.','Work through Reading, Listening, Writing, and Speaking in order. Your answers stay hidden until the review.')+
-    `<div class="panel test-card"><div class="test-layout"><div><div class="eyebrow">A FRESH COMBINATION</div><h2>Randomized full test</h2><p class="lead" style="font-size:12px">A new mix from your verified exercises: 50 Reading points, 47 Listening questions, 12 Writing items, and 11 Speaking responses.</p></div><button class="button accent" id="random-test" ${catalog.tests.some(t=>t.prepared)?'':'disabled'}>Create random test →</button></div></div><div class="panel" style="margin-bottom:22px"><div class="practice-options" style="margin-top:0"><div class="field"><label for="test-response">SPEAKING RESPONSE</label><select id="test-response"><option value="record">Record my voice</option><option value="text">Type a transcript · practice only</option></select></div></div><p class="mode-note">Source-based rehearsals use fixed questions and 2026 base timers. Reading and Listening are not adaptive. Exercises can recur across tests. Speaking uses original prompt audio with automatic response windows.</p></div><h2>${catalog.tests.filter(t=>t.prepared).length} prepared full tests</h2><p class="small">Each form keeps the same question selection when you return to it.</p><div class="prepared-grid">${catalog.tests.filter(t=>t.prepared).map(t=>`<article class="panel prepared-card"><div class="eyebrow">FORM ${esc(t.id.split('-').at(-1))}</div><h3>${esc(t.title)}</h3><p class="small">Reading · Listening<br>Writing · Speaking</p><button class="button" data-test="${esc(t.id)}">Start test →</button></article>`).join('')}</div><h2 style="margin-top:32px">Original source tests</h2>`+
+    `<div class="panel test-card"><div class="test-layout"><div><div class="eyebrow">A FRESH COMBINATION</div><h2>Randomized full test</h2><p class="lead" style="font-size:12px">A new mix from your verified exercises: 50 Reading points, 47 Listening questions, 12 Writing items, and 11 Speaking responses.</p></div><button class="button accent" id="random-test" ${catalog.tests.some(t=>t.prepared)?'':'disabled'}>Create random test →</button></div></div><div class="panel" style="margin-bottom:22px"><p class="mode-note">Source-based rehearsals use fixed questions and 2026 base timers. Reading and Listening are not adaptive. Exercises can recur across tests. Speaking uses original prompt audio with automatic response windows.</p></div><h2>${catalog.tests.filter(t=>t.prepared).length} prepared full tests</h2><p class="small">Each form keeps the same question selection when you return to it.</p><div class="prepared-grid">${catalog.tests.filter(t=>t.prepared).map(t=>`<article class="panel prepared-card"><div class="eyebrow">FORM ${esc(t.id.split('-').at(-1))}</div><h3>${esc(t.title)}</h3><p class="small">Reading · Listening<br>Writing · Speaking</p><button class="button" data-test="${esc(t.id)}">Start test →</button></article>`).join('')}</div><h2 style="margin-top:32px">Original source tests</h2>`+
     catalog.tests.filter(t=>!t.prepared).map(t=>{
       const counts=Object.entries(t.sections).map(([s,ids])=>`${s}: ${ids.reduce((n,id)=>n+(exercises[id]?.questionCount||1),0)}`);
       const missing=Object.entries(t.missingItemCounts||{}).filter(([s,n])=>n>0);
@@ -134,20 +144,21 @@ function renderTests() {
   $('#random-test').onclick=async()=>{try{const test=await api('/api/random-test',{});await startFullTest(test);}catch(e){showStartError(e);}};
 }
 async function startFullTest(test){
-  const responseMode=$('#test-response').value;
+  const responseMode='record';
   const items=['Reading','Listening','Writing','Speaking'].flatMap(s=>test.sections[s]||[]).map(id=>exercises[id]).filter(e=>e&&usable(e));
   await launchSession(makeBlocks(items,true),test.title,'timed',responseMode);
 }
 async function getMicrophone() {
   if(!navigator.mediaDevices?.getUserMedia)throw new Error('Microphone recording needs a browser with microphone support at this local address.');
-  if(!window.MediaRecorder)throw new Error('This browser cannot record audio. Use Chrome or Edge, or choose typed-transcript practice.');
+  if(!window.MediaRecorder)throw new Error('This browser cannot record audio. Use Chrome or Edge with microphone support.');
   if(stream&&stream.getAudioTracks().some(t=>t.readyState==='live'))return;
   stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
 }
 function releaseMicrophone(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}}
 async function launchSession(blocks,title,mode,responseMode) {
+  responseMode='record';
   if(blocks.some(b=>b.section==='Speaking')&&responseMode==='record') {
-    try{await getMicrophone();}catch(e){throw new Error('Microphone access was not granted. Allow the microphone, or choose “Type a transcript” for text-only practice.');}
+    try{await getMicrophone();}catch(e){throw new Error('Microphone access was not granted. Allow microphone access to practise Speaking.');}
   }
   loading('Preparing your practice session');
   const ids=blocks.flatMap(b=>b.ids);
@@ -162,8 +173,8 @@ function saveDraft() { if(session){try{localStorage.setItem(DRAFT_KEY,JSON.strin
 async function resumeSession() {
   try {
     const d=JSON.parse(localStorage.getItem(DRAFT_KEY));if(!d)return;
-    if(d.blocks.some(b=>b.section==='Speaking')&&d.responseMode==='record')await getMicrophone();
-    session=d;session.paused=false;session.phase=session.phase==='instructions'?'instructions':'question';setNav('');
+    if(d.blocks.some(b=>b.section==='Speaking'))await getMicrophone();
+    d.responseMode='record';session=d;session.paused=false;session.phase=session.phase==='instructions'?'instructions':'question';setNav('');
     if(session.block>=session.blocks.length){await finishSession();return;}
     if(session.phase==='instructions')renderInstructions();else{renderQuestion();startClock();}
   }catch(e){toast(e.message);}
@@ -202,30 +213,39 @@ function renderQuestion() {
     bindOptions();
     $('#replay-audio')?.addEventListener('click',()=>playAudio(e,()=>{}));
   } else if(e.type==='sentence') {
-    body.innerHTML=`<p class="question-prompt">${esc(e.context||e.prompt.split('\n')[0])}</p><p class="fixed-template">${esc(e.template||'')}</p><div class="sentence-answer" id="sentence-preview">Choose word groups below, or type the complete sentence.</div><div class="chunks">${(e.chunks||[]).map((word,i)=>`<button class="chunk" data-chunk="${i}">${esc(word)}</button>`).join('')}</div><label class="field-label" for="sentence-response" style="display:block;margin:20px 0 8px">YOUR COMPLETE SENTENCE · INCLUDE FIXED WORDS FROM THE TEMPLATE</label><input class="sentence-text" id="sentence-response" value="${esc(a.response)}" autocomplete="off" spellcheck="false"><button class="text-button" id="clear-chunks" style="margin-top:10px">Clear selected words</button>`;
-    $$('[data-chunk]').forEach(button=>button.onclick=()=>{
-      const i=Number(button.dataset.chunk); const at=selectedChunks.indexOf(i);
-      const slotCount=(e.template||'').match(/_+/g)?.length||e.chunks.length;
-      if(at>=0)selectedChunks.splice(at,1);else {if(selectedChunks.length>=slotCount){toast('Remove a word group before adding another.');return;}selectedChunks.push(i);}
-      button.classList.toggle('selected',selectedChunks.includes(i));
-      let slotIndex=0;
-      const text=e.template?(e.template.replace(/_+/g,()=>selectedChunks[slotIndex]!==undefined?e.chunks[selectedChunks[slotIndex++]]:'_____')):selectedChunks.map(i=>e.chunks[i]).join(' ');
-      $('#sentence-preview').textContent=text||'Choose word groups below.';
-      $('#sentence-response').value=text;currentAnswer().response=text;saveDraft();
-    });
-    $('#sentence-response').oninput=()=>{currentAnswer().response=$('#sentence-response').value;saveDraft();};
-    $('#clear-chunks').onclick=()=>{selectedChunks=[];$$('.chunk').forEach(b=>b.classList.remove('selected'));$('#sentence-preview').textContent='Choose word groups below.';$('#sentence-response').value='';currentAnswer().response='';saveDraft();};
-  } else if(['email','discussion'].includes(e.type)) {
+    renderSentenceBuilder(e,a,body);
+  } else if(['email','discussion','essay','worksheet'].includes(e.type)) {
+    if(b.section==='Listening'&&!session.played.includes(e.groupId||e.id)){
+      body.innerHTML=audioStage('Listen to the source script.','Then complete the original workbook activity.');
+      bindPlay(e,()=>{session.played.push(e.groupId||e.id);renderQuestion();});
+      $('#next-question').disabled=true;
+      return;
+    }
     body.innerHTML=`<div class="question-grid"><div><p class="question-prompt" style="font-size:14px">${esc(e.prompt)}</p>${e.passage?`<div class="passage">${esc(e.passage)}</div>`:''}</div><div><label class="sr-only" for="writing-response">Your response</label><textarea class="response" id="writing-response" spellcheck="false" autocomplete="off">${esc(a.response)}</textarea><div class="response-footer"><span id="word-count">${countWords(a.response)} words</span><span>Write in complete sentences.</span></div></div></div>`;
+    if(e.type==='worksheet')$('.response-footer span:last-child').textContent='Enter numbered answers following the source instructions.';
     $('#writing-response').oninput=()=>{a.response=$('#writing-response').value;$('#word-count').textContent=countWords(a.response)+' words';saveDraft();};
-  } else if(['repeat','interview'].includes(e.type)) {
+  } else if(['repeat','interview','oral_activity'].includes(e.type)) {
     if(a.recording||session.phase==='answered')renderRecorded(e,a);
     else {
-      body.innerHTML=audioStage(e.type==='repeat'?'Listen. Then repeat.':'Listen. Then answer.',`${e.seconds||45} seconds to respond · no preparation time`);
-      bindPlay(e,()=>beginSpeakingResponse(e));
+      if(e.textPrompt){
+        body.innerHTML=`<p class="question-prompt">${esc(e.prompt)}</p><p class="small">Extra exercise · ${e.seconds||45} seconds to respond</p>${e.sourceImagePage?`<p>${sourceLink(e)}</p>`:''}`;
+        beginSpeakingResponse(e).catch(error=>toast(error.message));
+      }else{
+        body.innerHTML=audioStage(e.type==='repeat'?'Listen. Then repeat.':'Listen. Then answer.',`${e.seconds||45} seconds to respond · no preparation time`,true);
+        playAudio(e,()=>beginSpeakingResponse(e)).catch(error=>toast(error.message));
+      }
       $('#next-question').disabled=true;
     }
   }
+  if(e.audioMethod||e.referenceMethod||e.simulationEligible===false){
+    body.insertAdjacentHTML('afterbegin',`<p class="small">${esc(e.audioMethod||e.referenceMethod||(e.simulationEligible===false?'Extra exercise':''))}</p>`);
+  }
+  if((e.sourceImagePage||e.type==='worksheet')&&resources[e.sourceId]?.path){
+    const start=e.sourceImagePage||e.sourcePage,end=e.sourcePageEnd||start;
+    const pages=Array.from({length:end-start+1},(_,i)=>`<img loading="lazy" class="source-page" alt="Original exercise page ${start+i}" src="/api/source-page?sourceId=${encodeURIComponent(e.sourceId)}&page=${start+i}" style="width:100%;object-fit:contain">`).join('');
+    body.insertAdjacentHTML('afterbegin',e.type==='worksheet'?`<details><summary>View original exercise pages and formatting</summary>${pages}</details>`:pages);
+  }
+  if(e.exerciseImage)body.insertAdjacentHTML('afterbegin',`<img class="source-page" alt="Exercise illustration" src="${mediaUrl(e.exerciseImage)}" style="max-width:100%">`);
   $('#next-question').onclick=()=>nextQuestion().catch(e=>toast(e.message));
   $('#previous-question')?.addEventListener('click',()=>{stopPlayback();session.index--;session.itemStarted=null;session.phase='question';renderQuestion();saveDraft();});
   $('#pause-session')?.addEventListener('click',togglePause);
@@ -233,9 +253,59 @@ function renderQuestion() {
   saveDraft();tick();
 }
 function countWords(v){return String(v||'').trim().split(/\s+/).filter(Boolean).length;}
+function renderSentenceBuilder(exercise,answer,body){
+  const chunks=exercise.chunks||[],slotCount=(exercise.template||'').match(/_+/g)?.length||chunks.length;
+  if(!Array.isArray(answer.sentenceSlots)||answer.sentenceSlots.length!==slotCount)answer.sentenceSlots=Array(slotCount).fill(null);
+  let grabbed=null;
+  function move(chunk,target){
+    if(!Number.isInteger(chunk)||chunk<0||chunk>=chunks.length)return;
+    const from=answer.sentenceSlots.indexOf(chunk),displaced=target===null?null:answer.sentenceSlots[target];
+    if(from>=0)answer.sentenceSlots[from]=null;
+    if(target!==null){answer.sentenceSlots[target]=chunk;if(from>=0&&displaced!==null&&displaced!==chunk)answer.sentenceSlots[from]=displaced;}
+    update();saveDraft();
+  }
+  function tile(index){return `<span class="sentence-tile" draggable="false" role="button" tabindex="0" data-word="${index}" aria-label="Drag ${esc(chunks[index])}">${esc(chunks[index])}</span>`;}
+  function update(){
+    let index=0;
+    const slot=()=>{const n=index++;return `<span class="sentence-drop" data-slot="${n}" tabindex="0" aria-label="Blank ${n+1}${answer.sentenceSlots[n]===null?', empty':', '+esc(chunks[answer.sentenceSlots[n]])}">${answer.sentenceSlots[n]===null?'<span class="slot-placeholder">'+(n+1)+'</span>':tile(answer.sentenceSlots[n])}</span>`;};
+    const template=exercise.template?esc(exercise.template).replace(/_+/g,slot):Array.from({length:slotCount},slot).join(' ');
+    body.innerHTML=`<p class="question-prompt">${esc(exercise.context||exercise.prompt.split('\n')[0])}</p><p class="small">Drag each word or phrase into its blank. Drag it back to the word bank to remove it.</p><div class="sentence-layout" id="sentence-target">${template}</div><div class="sentence-bank" id="sentence-bank" aria-label="Word bank">${chunks.map((_,i)=>answer.sentenceSlots.includes(i)?'':tile(i)).join('')}</div><p class="small">Keyboard: focus a word and press Space, then focus a blank and press Enter.</p><button class="text-button" id="clear-chunks">Clear sentence</button><span class="sr-only" aria-live="polite" id="sentence-live"></span>`;
+    let filled=0;
+    answer.response=exercise.template?exercise.template.replace(/_+/g,()=>answer.sentenceSlots[filled]===null?(filled++,'_____'):chunks[answer.sentenceSlots[filled++]]):answer.sentenceSlots.map(n=>n===null?'_____':chunks[n]).join(' ');
+    $$('[data-word]',body).forEach(word=>{
+      word.onpointerdown=event=>{
+        if(event.button!==0)return;
+        const pointer=event.pointerId,startX=event.clientX,startY=event.clientY;let moved=false,ghost=null;
+        word.setPointerCapture(pointer);word.focus();
+        function cleanup(){ghost?.remove();$$('.drag-over',body).forEach(el=>el.classList.remove('drag-over'));word.onpointermove=null;word.onpointerup=null;word.onpointercancel=null;if(word.hasPointerCapture(pointer))word.releasePointerCapture(pointer);}
+        word.onpointermove=ev=>{
+          if(!moved&&Math.hypot(ev.clientX-startX,ev.clientY-startY)<5)return;
+          moved=true;ev.preventDefault();
+          if(!ghost){ghost=document.createElement('span');ghost.className='sentence-tile sentence-ghost';ghost.textContent=chunks[Number(word.dataset.word)];document.body.append(ghost);}
+          ghost.style.left=(ev.clientX+12)+'px';ghost.style.top=(ev.clientY+12)+'px';
+          $$('.drag-over',body).forEach(el=>el.classList.remove('drag-over'));
+          document.elementFromPoint(ev.clientX,ev.clientY)?.closest('[data-slot]')?.classList.add('drag-over');
+        };
+        word.onpointerup=ev=>{const target=document.elementFromPoint(ev.clientX,ev.clientY),blank=target?.closest('[data-slot]'),bank=target?.closest('#sentence-bank');cleanup();if(moved&&(blank||bank))move(Number(word.dataset.word),blank?Number(blank.dataset.slot):null);};
+        word.onpointercancel=cleanup;
+      };
+      word.ondragstart=event=>{grabbed=Number(word.dataset.word);event.dataTransfer.setData('text/plain',String(grabbed));event.dataTransfer.effectAllowed='move';};
+      word.onkeydown=event=>{if(event.code==='Space'){event.preventDefault();grabbed=Number(word.dataset.word);$('#sentence-live').textContent='Word selected. Focus the target blank and press Enter.';}};
+    });
+    $$('[data-slot]',body).forEach(blank=>{
+      blank.ondragover=event=>{event.preventDefault();blank.classList.add('drag-over');};
+      blank.ondragleave=()=>blank.classList.remove('drag-over');
+      blank.ondrop=event=>{event.preventDefault();event.stopPropagation();const n=Number(event.dataTransfer.getData('text/plain'));if(event.dataTransfer.getData('text/plain')!=='')move(n,Number(blank.dataset.slot));};
+      blank.onkeydown=event=>{if(event.key==='Enter'&&grabbed!==null){event.preventDefault();move(grabbed,Number(blank.dataset.slot));grabbed=null;}};
+    });
+    const bank=$('#sentence-bank');bank.ondragover=event=>event.preventDefault();bank.ondrop=event=>{event.preventDefault();const text=event.dataTransfer.getData('text/plain');if(text!=='')move(Number(text),null);};
+    $('#clear-chunks').onclick=()=>{answer.sentenceSlots.fill(null);update();saveDraft();};
+  }
+  update();
+}
 function bindOptions(){$$('input[name="answer"]').forEach(r=>r.onchange=()=>{currentAnswer().response=r.value;saveDraft();});}
 function showListeningQuestion(question){$('#question-body').innerHTML=(session.mode==='coach'?'<button class="button" id="replay-audio">Replay audio</button>':'')+question;bindOptions();$('#next-question').disabled=false;$('#replay-audio')?.addEventListener('click',()=>playAudio(currentExercise(),()=>{}));}
-function audioStage(title,subtitle){return `<div class="audio-stage"><div class="audio-orb">♫</div><h3>${title}</h3><p>${subtitle}</p><div class="audio-status" id="audio-status"><button class="button primary" id="play-prompt">Play prompt & begin →</button></div></div>`;}
+function audioStage(title,subtitle,automatic=false){return `<div class="audio-stage"><div class="audio-orb">♫</div><h3>${title}</h3><p>${subtitle}</p><div class="audio-status" id="audio-status">${automatic?'<p>The prompt starts automatically.</p>':'<button class="button primary" id="play-prompt">Play prompt & begin →</button>'}</div></div>`;}
 function bindPlay(e,after){$('#play-prompt').onclick=()=>playAudio(e,after).catch(error=>{toast(error.message);if($('#audio-status'))$('#audio-status').innerHTML='<button class="button" id="play-prompt">Retry prompt audio</button>';bindPlay(e,after);});}
 function stopPlayback(){if(playback){playback.onended=null;playback.pause();playback=null;}}
 async function playAudio(e,after){
@@ -249,11 +319,10 @@ async function playAudio(e,after){
 async function beginSpeakingResponse(e){
   session.phase='responding';session.itemDeadline=Date.now()+(e.seconds||45)*1000;
   if($('#timer-label'))$('#timer-label').textContent='RESPONSE WINDOW';
-  $('#question-body').innerHTML=`<div class="audio-stage"><div class="audio-orb recording">●</div><h3>${session.responseMode==='record'?'Your microphone is recording.':'Your response window is open.'}</h3><p>${e.type==='repeat'?'Repeat exactly what you heard.':'Answer the interviewer clearly, with relevant details.'}</p>${session.responseMode==='text'?'<textarea class="response" id="spoken-transcript" aria-label="Your spoken response transcript" spellcheck="false"></textarea>':'<p class="small">Your recording will stop automatically when time runs out.</p>'}<button class="button" id="finish-response">Finish response</button></div>`;
+  $('#question-body').innerHTML=`<div class="audio-stage"><div class="audio-orb recording">●</div><h3>Your microphone is recording.</h3>${e.textPrompt?`<p class="question-prompt">${esc(e.prompt)}</p>`:''}<p>${e.type==='repeat'?'Repeat exactly what you heard.':'Answer the interviewer clearly, with relevant details.'}</p><p class="small">Your recording will stop automatically when time runs out.</p><button class="button" id="finish-response">Finish response</button></div>`;
   $('#next-question').disabled=true;
   $('#finish-response').onclick=()=>completeSpeakingResponse().catch(error=>toast(error.message));
-  if(session.responseMode==='text')$('#spoken-transcript').oninput=()=>{currentAnswer().response=$('#spoken-transcript').value;saveDraft();};
-  else {
+  {
     try{
       await getMicrophone();
       const mime=['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mp4'].find(t=>MediaRecorder.isTypeSupported(t));
@@ -277,9 +346,9 @@ async function completeSpeakingResponse(){
   advancing=true;
   try{
     session.phase='saving';session.itemDeadline=null;
-    const a=currentAnswer();if($('#spoken-transcript'))a.response=$('#spoken-transcript').value;
+    const a=currentAnswer();
     if($('#finish-response'))$('#finish-response').disabled=true;
-    if(session.responseMode==='record')a.recording=await stopRecording();
+    a.recording=await stopRecording();
     a.elapsed=(Date.now()-session.itemStarted)/1000;
     session.phase='answered';saveDraft();
     if(session.mode==='timed'){advancing=false;await nextQuestion();}
@@ -340,6 +409,7 @@ async function finishSession(){
   }catch(error){session=null;toast(error.message);renderPractice();}
 }
 function renderResources(){
+  if(catalog.portableExercisesOnly){content.innerHTML=hero('YOUR EXERCISE LIBRARY','All exercises, ready to practise.','The original documents and full recordings are excluded from this compact edition.')+`<div class="panel">${catalog.resources.map(r=>`<div class="resource-row"><div><h3>${esc(r.title)}</h3><p>${esc(r.section)} · ${r.exerciseCount} exercises</p></div></div>`).join('')}</div>`;return;}
   content.innerHTML=hero('YOUR MATERIALS, IN ONE PLACE','A library that works with you.','All your original files remain available. Current exercises feed timed practice; older templates and books are study references.')+
     `<div class="resource-toolbar"><input id="resource-search" class="search" aria-label="Search resources" placeholder="Search your books, question banks, and recordings…"><select id="resource-section" class="search" aria-label="Filter section"><option value="all">All sections</option>${['Reading','Listening','Writing','Speaking','General'].map(s=>`<option>${s}</option>`).join('')}</select><select id="resource-kind" class="search" aria-label="Filter type"><option value="all">All file types</option><option value="audio">Audio</option><option value="pdf">PDF</option></select></div><div class="panel" id="resource-list"></div><details><summary>About the imported materials</summary><p class="small">${catalog.resources.length} original files are indexed. Exercises with verified answers are available in practice. Printed audio scripts without original recordings remain reference material. Use Audio studio to practise selected clips from full recordings. Older templates are available for study.</p>${(catalog.importReport?.warnings||[]).map(w=>`<p class="small">${esc(w)}</p>`).join('')}</details>`;
   function list(){
@@ -351,6 +421,7 @@ function renderResources(){
   $('#resource-search').oninput=list;$('#resource-section').onchange=list;$('#resource-kind').onchange=list;list();
 }
 function renderStudio(){
+  if(catalog.portableExercisesOnly){content.innerHTML=hero('EXERCISES ONLY','Your prompts are already prepared.','All imported audio prompts are available in section practice. This compact edition excludes the long source recordings.');return;}
   const tracks=catalog.resources.filter(r=>r.kind==='audio');if(!studioResource)studioResource=tracks[0]?.id||'';
   content.innerHTML=hero('USE EVERY RECORDING','Turn an audio clip into practice.','Choose one sentence or one interview question from your saved recordings. The local speech engine prepares that clip as a timed prompt.')+
     `<div class="panel"><div class="field"><label for="studio-track">YOUR RECORDING</label><select id="studio-track">${tracks.map(r=>`<option value="${esc(r.id)}" ${r.id===studioResource?'selected':''}>${esc(r.title)}</option>`).join('')}</select></div><audio id="studio-player" controls preload="metadata" src="${mediaUrl(resources[studioResource]?.path||'')}"></audio><p class="small" id="studio-time">Play the recording and find the start and end of one prompt.</p><div class="studio-fields"><div class="field"><label for="clip-start">START · SECONDS</label><input id="clip-start" type="number" min="0" step="0.1" value="0"></div><button class="button" id="mark-start">Use current time</button><div class="field"><label for="clip-end">END · SECONDS</label><input id="clip-end" type="number" min="0.2" step="0.1" value="10"></div><button class="button" id="mark-end">Use current time</button><div class="field"><label for="clip-type">TASK</label><select id="clip-type"><option value="repeat">Listen and Repeat</option><option value="interview">Interview question</option></select></div></div><div class="practice-options"><button class="button" id="preview-clip">Preview selection</button><button class="button primary" id="create-clip">Create timed exercise →</button></div><p class="warning">Select only the prompt, without beeps, instructions, or a sample answer. The comparison transcript is machine-generated and may need correction after your attempt. This is a custom practice exercise.</p></div><div id="clip-result"></div>`;
@@ -364,9 +435,9 @@ function renderStudio(){
     try{
       loading('Preparing your selected prompt');
       const job=await api('/api/create-clip',payload);const exercise=await waitJob(job.jobId);exercises[exercise.id]=exercise;catalog.exercises.push(exercise);
-      content.innerHTML=hero('YOUR CUSTOM DRILL','Your prompt is ready.','Listen once and respond under the timer. You can inspect the recognized reference after your attempt.')+`<div class="panel"><h3>${esc(typeName[exercise.type])}</h3><p class="small">${exercise.seconds} seconds to respond. Recordings remain local.</p><button class="button primary" id="start-clip">Record my response →</button> <button class="button" id="type-clip">Use typed transcript</button></div>`;
+      content.innerHTML=hero('YOUR CUSTOM DRILL','Your prompt is ready.','Listen once and respond under the timer. You can inspect the recognized reference after your attempt.')+`<div class="panel"><h3>${esc(typeName[exercise.type])}</h3><p class="small">${exercise.seconds} seconds to respond. Recordings remain local.</p><button class="button primary" id="start-clip">Record my response →</button></div>`;
       $('#start-clip').onclick=()=>launchSession(makeBlocks([exercise]),exercise.title,'timed','record').catch(showStartError);
-      $('#type-clip').onclick=()=>launchSession(makeBlocks([exercise]),exercise.title,'timed','text').catch(showStartError);
+
     }catch(error){toast(error.message);renderStudio();}
   };
 }
@@ -401,7 +472,7 @@ function renderResult(result){
     `<div style="display:flex;gap:10px"><button class="button" id="export-result">Download feedback</button><button class="button" id="new-practice">New practice →</button><button class="button remove-button" id="remove-result">Remove result</button></div><div class="results-grid">${Object.entries(result.summary).map(([section,s])=>`<div class="result-stat"><h3>${section}</h3>${s.accuracy!==null?`<strong>${s.accuracy}%</strong><small>${s.points} / ${s.total} source-key points</small>`:''}${s.rubricAverage!==null?`<strong>${s.rubricAverage}<span style="font-size:14px"> / 5</span></strong><small>Local rubric estimate</small>`:''}${s.repeatAccuracy!==null?`<strong>${s.repeatAccuracy}%</strong><small>Repetition word accuracy</small>`:''}${s.incomplete?`<p class="small">${s.incomplete} reviews incomplete</p>`:''}</div>`).join('')}</div><p class="warning">${esc(result.disclaimer)}</p>${result.priorities.length?`<div class="panel"><h3>Your next practice priorities</h3><ul class="feedback-list">${result.priorities.map(p=>`<li>${esc(p)}</li>`).join('')}</ul></div>`:''}`+
     result.rows.map((row,i)=>{
       const g=row.grade;
-      return `<article class="feedback-card"><div class="feedback-head"><h3><span class="tag">${row.section}</span>${esc(typeName[row.type])}</h3><span class="feedback-score">${esc(resultLabel(g))}</span></div>${g.error?`<p class="error">${esc(g.error)}</p>`:''}${g.strengths?.length?`<ul class="feedback-list">${g.strengths.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${g.improvements?.length?`<ul class="feedback-list">${g.improvements.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}<details><summary>View response, corrections, and source</summary><p class="feedback-copy">${esc(row.prompt)}</p>${row.recording?`<audio controls src="/api/recordings/${esc(row.recording)}"></audio>`:''}<div class="small">${row.audio?'Recognized transcript':'Your response'}</div><p class="feedback-copy quote">${esc(Array.isArray(row.response)?row.response.join(', '):row.response||'(No response)')}</p>${g.answer!==undefined?`<div class="small">Source answer</div><p class="feedback-copy">${esc(Array.isArray(g.answer)?g.answer.join(', '):g.answer)}</p>`:''}${g.explanation?`<p class="feedback-copy">${esc(g.explanation)}</p>`:''}${g.reference?`<div class="small">Reference sentence</div><p class="feedback-copy">${esc(g.reference)}</p>`:''}${g.changes?.length?`<ul class="feedback-list">${g.changes.map(c=>`<li>${esc(c.type==='delete'?'Missing':c.type==='insert'?'Added':'Changed')}: ${c.expected?esc(c.expected):''}${c.expected&&c.heard?' → ':''}${esc(c.heard)}</li>`).join('')}</ul>`:''}${g.corrections?.map(c=>`<div class="correction"><del>${esc(c.original)}</del> → <ins>${esc(c.corrected)}</ins><div class="small">${esc(c.reason)}</div></div>`).join('')||''}${g.betterOpening?`<div class="small" style="margin-top:12px">Possible improved opening</div><p class="feedback-copy">${esc(g.betterOpening)}</p>`:''}${row.audio?`<p class="small">Recorded duration: ${row.audio.metrics.duration}s · Long pauses: ${row.audio.metrics.longPauses}${row.audio.metrics.wordsPerMinute!==undefined?' · Recognized words/min: '+row.audio.metrics.wordsPerMinute:''}</p>`:''}${g.limitations?.length?`<p class="small">${g.limitations.map(esc).join(' ')}</p>`:''}${row.recording?`<label class="field-label" for="transcript-${i}">CORRECT RECOGNITION ERRORS, THEN RE-EVALUATE</label><textarea class="response" id="transcript-${i}" style="min-height:90px">${esc(row.response)}</textarea><button class="button" data-regrade="${i}">Re-evaluate this response</button>`:''}${row.sampleAnswer?`<details><summary>Source sample answer</summary><p class="feedback-copy">${esc(row.sampleAnswer)}</p></details>`:''}<p class="small" style="margin-top:12px">${sourceLink(row)}</p></details></article>`;
+      return `<article class="feedback-card"><div class="feedback-head"><h3><span class="tag">${row.section}</span>${esc(typeName[row.type])}</h3><span class="feedback-score">${esc(resultLabel(g))}</span></div>${g.error?`<p class="error">${esc(g.error)}</p>`:''}${g.strengths?.length?`<ul class="feedback-list">${g.strengths.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${g.improvements?.length?`<ul class="feedback-list">${g.improvements.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}<details><summary>View response, corrections, and source</summary><p class="feedback-copy">${esc(row.prompt)}</p>${row.recording?`<audio controls src="/api/recordings/${esc(row.recording)}"></audio>`:''}<div class="small">${row.audio?'Recognized transcript':'Your response'}</div><p class="feedback-copy quote">${esc(Array.isArray(row.response)?row.response.join(', '):row.response||'(No response)')}</p>${g.answer!==undefined?`<div class="small">Source answer</div><p class="feedback-copy">${esc(Array.isArray(g.answer)?g.answer.join(', '):g.answer)}</p>`:''}${g.explanation?`<p class="feedback-copy">${esc(g.explanation)}</p>`:''}${g.reference?`<div class="small">Reference sentence</div><p class="feedback-copy">${esc(g.reference)}</p>`:''}${g.changes?.length?`<ul class="feedback-list">${g.changes.map(c=>`<li>${esc(c.type==='delete'?'Missing':c.type==='insert'?'Added':'Changed')}: ${c.expected?esc(c.expected):''}${c.expected&&c.heard?' → ':''}${esc(c.heard)}</li>`).join('')}</ul>`:''}${g.corrections?.map(c=>`<div class="correction"><del>${esc(c.original)}</del> → <ins>${esc(c.corrected)}</ins><div class="small">${esc(c.reason)}</div></div>`).join('')||''}${g.rubricSource?`<p class="small">${esc(g.rubricSource)}. ${esc(g.ratingPolicy)}</p><div class="small">Task fulfilment: ${g.rubric?.taskFulfillment}/5 · Development: ${g.rubric?.development}/5 · Language: ${g.rubric?.language}/5</div>${g.checklist?`<p class="small">${g.checklist.words} words${g.checklist.suggestedWordTarget?' · Self-review target: '+g.checklist.suggestedWordTarget+'+ words':''}</p>`:''}`:''}${g.betterOpening?`<div class="small" style="margin-top:12px">Possible improved opening</div><p class="feedback-copy">${esc(g.betterOpening)}</p>`:''}${row.audio?`<p class="small">Recorded duration: ${row.audio.metrics.duration}s · Long pauses: ${row.audio.metrics.longPauses}${row.audio.metrics.wordsPerMinute!==undefined?' · Recognized words/min: '+row.audio.metrics.wordsPerMinute:''}</p>`:''}${g.limitations?.length?`<p class="small">${g.limitations.map(esc).join(' ')}</p>`:''}${row.recording?`<label class="field-label" for="transcript-${i}">CORRECT RECOGNITION ERRORS, THEN RE-EVALUATE</label><textarea class="response" id="transcript-${i}" style="min-height:90px">${esc(row.response)}</textarea><button class="button" data-regrade="${i}">Re-evaluate this response</button>`:''}${row.sampleAnswer?`<details><summary>Source sample answer</summary><p class="feedback-copy">${esc(row.sampleAnswer)}</p></details>`:''}<p class="small" style="margin-top:12px">${sourceLink(row)}</p></details></article>`;
     }).join('');
   if(hasIncomplete){
     $('#export-result').insertAdjacentHTML('afterend','<button class="button" id="retry-result">Retry incomplete reviews</button>');
@@ -411,6 +482,17 @@ function renderResult(result){
     };
   }
   $('#new-practice').onclick=()=>navigate('practice');
+  result.rows.forEach((row,i)=>{
+    if(!row.id.startsWith('audio-')&&!row.id.startsWith('clip-'))return;
+    const card=$$('.feedback-card')[i],details=card.querySelector('details');
+    const sourceText=row.type==='repeat'?(row.grade.reference||''):row.prompt;
+    details.insertAdjacentHTML('beforeend',`<label class="field-label" for="prompt-transcript-${i}">CORRECT THE IMPORTED PROMPT TRANSCRIPT</label><textarea class="response" id="prompt-transcript-${i}" style="min-height:90px">${esc(sourceText)}</textarea><button class="button" data-prompt-correction="${i}">Save prompt correction and review</button><p class="small">Listen to the source audio before changing this text. This corrects the imported prompt, separately from your response.</p>`);
+  });
+  $$('[data-prompt-correction]').forEach(button=>button.onclick=async()=>{
+    const i=Number(button.dataset.promptCorrection),row=result.rows[i],text=$('#prompt-transcript-'+i).value;
+    try{await api('/api/reference',{id:row.id,text});loading('Reviewing with the corrected prompt');const job=await api('/api/evaluate',{title:'Prompt correction · '+result.title,mode:'prompt review',items:[{id:row.id,response:row.response,correctedTranscript:row.response,recording:row.recording}]});renderResult(await waitJob(job.jobId));}
+    catch(error){toast(error.message);renderResult(result);}
+  });
   $('#remove-result').onclick=async()=>{
     $('#remove-result').disabled=true;
     try{await api('/api/history/'+encodeURIComponent(result.id)+'/remove',{});localStorage.setItem(REMOVED_RESULT_KEY,result.id);await renderHistory();toast('Result removed. You can undo this from your history.');}

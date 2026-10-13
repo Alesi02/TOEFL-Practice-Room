@@ -3,6 +3,7 @@ import json
 import random
 from collections import defaultdict
 from pathlib import Path
+from practice_catalog import is_toefl_2026
 
 BASE = Path(__file__).resolve().parent
 
@@ -32,11 +33,12 @@ def listening_type(item):
     if 'conversation' in url: return 'conversation'
     if 'announcement' in url: return 'announcement'
     if 'talk' in url: return 'talk'
-    return 'other'
+    category=str(item.get('audioType','')).lower()
+    return {'statement':'short','short':'short','conversation':'conversation','announcement':'announcement','academic_talk':'talk','talk':'talk','lecture':'talk'}.get(category,'other')
 
 def build_test(catalog, seed, identifier, title):
     rng = random.Random(seed)
-    items = catalog['exercises']
+    items = [x for x in catalog['exercises'] if is_toefl_2026(x)]
     gap = [x for x in items if x['section']=='Reading' and x['type']=='complete_words' and len(x.get('answer',[]))==10]
     mcq = [x for x in items if x['section']=='Reading' and x['type']=='mcq' and x.get('answer')]
     chosen_gaps = rng.sample(gap, 2)
