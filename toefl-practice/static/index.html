@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TOEFL Practice Room</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#practice"><span class="brand-icon">t.</span><span>TOEFL<span class="brand-sub">PRACTICE ROOM</span></span></a>
+      <div class="nav-label">YOUR WORKSPACE</div>
+      <nav aria-label="Main navigation">
+        <button data-view="practice" class="nav-item active"><span>◫</span> Section practice</button>
+        <button data-view="tests" class="nav-item"><span>◷</span> Full tests</button>
+        <button data-view="studio" class="nav-item"><span>♫</span> Audio studio</button>
+        <button data-view="resources" class="nav-item"><span>▤</span> Your resources</button>
+        <button data-view="history" class="nav-item"><span>↗</span> Results & feedback</button>
+      </nav>
+      <div class="sidebar-bottom"><span class="local-dot"></span> Your private practice space<p>Answers and recordings stay on this computer.</p><button id="engines-button" class="text-button">Check evaluation engines</button><br><button id="stop-app" class="text-button" style="margin-top:12px">Stop app</button></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><span>Practice with purpose.</span><div><span class="local-badge">● LOCAL APP</span><button id="theme-button" class="icon-button" aria-label="Toggle dark mode">◐</button></div></header>
+      <div id="content" class="content" aria-live="polite"></div>
+      <footer>Independent practice tool. Not affiliated with ETS. <a href="https://www.ets.org/toefl/test-takers/ibt/about/content.html" target="_blank" rel="noreferrer">2026 test format ↗</a></footer>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+  <dialog id="status-dialog"><div class="eyebrow">LOCAL EVALUATION</div><h2>Your feedback engines</h2><div id="engine-status"></div><button class="button primary" onclick="this.closest('dialog').close()">Done</button></dialog>
+  <script src="/app.js" defer></script>
+</body>
+</html>
