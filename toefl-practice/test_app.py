@@ -3,11 +3,28 @@ import unittest
 import tempfile
 import json
 import wave
+import threading
 from pathlib import Path
 from unittest.mock import patch
 import server
 
 class GradingTests(unittest.TestCase):
+    def test_preparation_can_run_while_both_grading_workers_are_busy(self):
+        release = threading.Event()
+        started = [threading.Event(), threading.Event()]
+        def busy(job, ready):
+            ready.set()
+            release.wait(5)
+            return 'graded'
+        identifiers = [server.submit_job(lambda job, ready=ready: busy(job, ready)) for ready in started]
+        try:
+            self.assertTrue(all(ready.wait(2) for ready in started))
+            prepared = threading.Event()
+            identifier = server.submit_job(lambda job: prepared.set(), executor=server.PREPARE_POOL)
+            self.assertTrue(prepared.wait(2), 'New practice must not wait for grading workers')
+        finally:
+            release.set()
+
     def test_generated_audio_is_removed_from_old_banks_and_source_tests(self):
         from practice_catalog import remove_generated_audio, is_toefl_2026
         human={'id':'original','section':'Listening','type':'mcq','sourceId':'source','audio':'original.mp3'}
@@ -62,10 +79,28 @@ class GradingTests(unittest.TestCase):
         self.assertEqual(server.repetition_grade('Welcome to the library.','')['accuracy'],0)
 
     def test_speech_status_detects_a_broken_decoder(self):
-        with patch.object(server.importlib, 'import_module', side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")):
+        with patch.object(server.importlib, 'import_module', side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")), patch.object(server,'run_speech_worker',return_value={'speechAvailable':False,'speechError':"No module named 'faster_whisper.audio'"}):
             status=server.speech_status()
         self.assertFalse(status['speechAvailable'])
         self.assertIn('faster_whisper.audio',status['speechError'])
+
+    def test_speech_status_recovers_a_stale_host_import(self):
+        with patch.object(server,'USE_SPEECH_WORKER',False), patch.object(server.importlib,'import_module',side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")), patch.object(server,'run_speech_worker',return_value={'speechAvailable':True,'speechError':None}) as worker:
+            self.assertTrue(server.speech_status()['speechAvailable'])
+            self.assertTrue(server.USE_SPEECH_WORKER)
+            worker.assert_called_once_with('status')
+
+    def test_transcription_recovers_without_restarting_or_losing_recording(self):
+        recovered={'text':'Welcome to the library.','metrics':{'duration':2},'segments':[]}
+        with patch.object(server,'USE_SPEECH_WORKER',False), patch.object(server,'transcribe_local',side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")), patch.object(server,'run_speech_worker',return_value=recovered) as worker:
+            self.assertEqual(server.transcribe(Path('saved.webm')),recovered)
+            worker.assert_called_once_with('transcribe',path=Path('saved.webm'),samples=None)
+            self.assertTrue(server.USE_SPEECH_WORKER)
+
+    def test_speech_recovery_does_not_hide_unrelated_dependency_errors(self):
+        with patch.object(server,'USE_SPEECH_WORKER',False), patch.object(server,'transcribe_local',side_effect=ModuleNotFoundError("No module named 'numpy'",name='numpy')), patch.object(server,'run_speech_worker') as worker:
+            with self.assertRaises(ModuleNotFoundError):server.transcribe(Path('saved.webm'))
+            worker.assert_not_called()
 
     def test_audio_decoder_reads_a_real_wave_file(self):
         with tempfile.TemporaryDirectory() as directory:

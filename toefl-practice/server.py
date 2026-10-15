@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -33,11 +34,13 @@ PRIVATE = Path(os.environ.get('TOEFL_DATA_DIR') or configured_directory or defau
 for folder in ('history', 'recordings'):
     (PRIVATE / folder).mkdir(parents=True, exist_ok=True)
 POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+PREPARE_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 JOBS = {}
 JOBS_LOCK = threading.Lock()
 MODEL_LOCK = threading.Lock()
 LLM_LOCK = threading.Lock()
 WHISPER = None
+USE_SPEECH_WORKER = False
 LLAMA = None
 LLAMA_LOG = None
 LLAMA_TOKEN = uuid.uuid4().hex + uuid.uuid4().hex
@@ -111,6 +114,38 @@ def read_audio(path):
     from faster_whisper.audio import decode_audio
     return decode_audio(str(path), sampling_rate=16000)
 
+def speech_import_error(error):
+    return isinstance(error, ModuleNotFoundError) and (
+        getattr(error, 'name', '') in {'faster_whisper', 'faster_whisper.audio'}
+        or "No module named 'faster_whisper" in str(error)
+        or 'faster_whisper.audio' in str(error))
+
+def run_speech_worker(operation, path=None, samples=None):
+    """Recover a stale host import in a fresh, offline Python process."""
+    with tempfile.TemporaryDirectory(prefix='speech-worker-', dir=PRIVATE) as folder:
+        directory = Path(folder).resolve()
+        if not directory.is_relative_to(PRIVATE.resolve()):
+            raise ValueError('Invalid speech temporary directory')
+        request = {'operation': operation}
+        if path is not None:
+            request['path'] = str(Path(path).resolve())
+        if samples is not None:
+            import numpy as np
+            np.save(directory/'samples.npy', samples, allow_pickle=False)
+            request['samples'] = str(directory/'samples.npy')
+        input_path, output_path = directory/'request.json', directory/'response.json'
+        input_path.write_text(json.dumps(request), encoding='utf8')
+        environment = {**os.environ, 'TOEFL_SPEECH_WORKER': '1', 'TOEFL_DATA_DIR': str(PRIVATE)}
+        subprocess.run([sys.executable, str(BASE/'server.py'), '--speech-worker', str(input_path), str(output_path)],
+                       cwd=BASE, env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                       timeout=240, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), check=False)
+        if not output_path.is_file():
+            raise RuntimeError('The local speech process could not start. Check the speech dependencies.')
+        result = json.loads(output_path.read_text(encoding='utf8'))
+        if result.get('workerError'):
+            raise RuntimeError(result['workerError'])
+        return result
+
 def speech_status():
     """Check the installed decoder and model, rather than reporting files alone."""
     try:
@@ -123,6 +158,15 @@ def speech_status():
             raise RuntimeError('Local speech model is incomplete. Run Setup grading models.cmd.')
         return {'speechAvailable': True, 'speechError': None}
     except Exception as error:
+        if speech_import_error(error) and os.environ.get('TOEFL_SPEECH_WORKER') != '1':
+            try:
+                status = run_speech_worker('status')
+                if status.get('speechAvailable'):
+                    global USE_SPEECH_WORKER
+                    USE_SPEECH_WORKER = True
+                return status
+            except Exception as recovery_error:
+                return {'speechAvailable': False, 'speechError': str(recovery_error)}
         return {'speechAvailable': False, 'speechError': str(error)}
 
 def audio_metrics(samples):
@@ -151,6 +195,19 @@ def audio_metrics(samples):
     return {"duration": round(duration, 2), "silent": peak < 0.009 or not len(active), "longPauses": len(pauses), "pauseLengths": pauses, "clipped": float(np.mean(np.abs(samples) > 0.99)) > 0.01}
 
 def transcribe(path=None, samples=None):
+    global USE_SPEECH_WORKER
+    if USE_SPEECH_WORKER and os.environ.get('TOEFL_SPEECH_WORKER') != '1':
+        return run_speech_worker('transcribe', path=path, samples=samples)
+    try:
+        return transcribe_local(path=path, samples=samples)
+    except ModuleNotFoundError as error:
+        if not speech_import_error(error) or os.environ.get('TOEFL_SPEECH_WORKER') == '1':
+            raise
+        result = run_speech_worker('transcribe', path=path, samples=samples)
+        USE_SPEECH_WORKER = True
+        return result
+
+def transcribe_local(path=None, samples=None):
     global WHISPER
     import numpy as np
     with MODEL_LOCK:
@@ -405,7 +462,7 @@ def retry_result(identifier, job):
     ]}
     return evaluate_attempt(payload, job, previous=previous)
 
-def submit_job(function):
+def submit_job(function, executor=None):
     identifier = uuid.uuid4().hex
     job = {"id": identifier, "status": "working", "message": "Starting local review", "completed": 0}
     with JOBS_LOCK:
@@ -418,7 +475,7 @@ def submit_job(function):
         except Exception as error:
             job["status"] = "error"
             job["error"] = str(error)
-    POOL.submit(work)
+    (executor or POOL).submit(work)
     return identifier
 
 def create_clip(payload, job):
@@ -625,7 +682,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/create-clip":
                 return self.json({"jobId": submit_job(lambda job: create_clip(payload, job))}, 202)
             if self.path == "/api/prepare":
-                return self.json({"jobId": submit_job(lambda job: prepare_media(payload, job))}, 202)
+                return self.json({"jobId": submit_job(lambda job: prepare_media(payload, job), executor=PREPARE_POOL)}, 202)
             if self.path == "/api/transcribe":
                 path = recording_path(payload.get("recording"))
                 return self.json({"jobId": submit_job(lambda job: transcribe(path))}, 202)
@@ -667,5 +724,23 @@ def main():
     finally:
         server.server_close(); shutdown_engines()
 
+def speech_worker_main(input_path, output_path):
+    try:
+        request = json.loads(input_path.read_text(encoding='utf8'))
+        if request['operation'] == 'status':
+            result = speech_status()
+        elif request['operation'] == 'transcribe':
+            import numpy as np
+            samples = np.load(request['samples'], allow_pickle=False) if request.get('samples') else None
+            result = transcribe(path=request.get('path'), samples=samples)
+        else:
+            raise ValueError('Unknown speech operation')
+    except Exception as error:
+        result = {'workerError': str(error)}
+    output_path.write_text(json.dumps(result, ensure_ascii=False), encoding='utf8')
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 4 and sys.argv[1] == '--speech-worker':
+        speech_worker_main(Path(sys.argv[2]), Path(sys.argv[3]))
+    else:
+        main()

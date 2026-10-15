@@ -10,7 +10,7 @@ def main():
     app=TARGET/'toefl-practice'
     app.mkdir(parents=True,exist_ok=True)
     for path in BASE.iterdir():
-        if path.is_file() and path.suffix in {'.py','.cmd','.ps1'}:
+        if path.is_file() and path.suffix in {'.py','.cmd','.ps1','.cjs'}:
             shutil.copy2(path,app/path.name)
     shutil.copy2(BASE/'requirements.txt',app/'requirements.txt')
     shutil.copy2(BASE/'.gitignore',app/'.gitignore')

@@ -27,6 +27,12 @@ The Material filter has two groups: **TOEFL 2026 PRACTICE** and **Extra**. Older
 
 Speaking accepts recordings only. After starting a task, its prompt plays automatically and recording begins immediately when playback ends, without preparation time. Build a Sentence uses drag-and-drop tiles rather than clicking words or typing the answer; a keyboard alternative is provided for accessibility.
 
+Before the first Speaking interview prompt, a 30-second break preserves section time. Select **Continue to interview** to start sooner; otherwise the interview starts automatically when the countdown ends.
+
+Grading continues in the background while you start another practice session. Progress and feedback notifications appear above the practice area. Completed reviews never replace an active question or clear its saved answers. Pending review tracking survives a page refresh; if the app itself restarts, an interrupted review can be retried from its notification.
+
+The speech decoder recovers a stale import in a fresh local process, preserving the original recording without reinstalling dependencies or sending audio online.
+
 Twenty deterministic prepared forms and a randomized-test option are generated when the imported pool contains enough verified questions for all four sections. Fixed forms use current task types and approximate section timers. They do not reproduce ETS's adaptive routing or official score conversion.
 
 Writing and Speaking practice ratings use the official ETS TOEFL iBT **0–5 task descriptors**, separately for Email, Academic Discussion, Listen and Repeat, and Interview. Writing is judged holistically for communicative success, development, language and (for email) appropriate social conventions. Ordinary timed-writing slips are allowed; there are no fixed typo, word-count, filler-count or pause-count cutoffs.
@@ -44,6 +50,8 @@ Results and recordings are stored per computer under the local application-data 
 ## Development
 
 App files are in `toefl-practice/`. Run `python toefl-practice/server.py` from a source checkout after installing the Python dependencies. Import authorized source materials locally; do not commit the generated catalogs or original media. The portable release builder supports `--public` to exclude source materials.
+
+Run `python -m unittest test_app` from the app folder for server checks. Developers with Node.js can also run `node test_ui.cjs` to check background-grading isolation, draft recovery, and interview timing.
 
 ## References
 

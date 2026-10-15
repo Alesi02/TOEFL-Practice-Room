@@ -13,6 +13,69 @@ let studioResource='', studioDuration=0, selectedChunks=[];
 const content = $('#content');
 const DRAFT_KEY = 'toefl-practice-draft-v1';
 const REMOVED_RESULT_KEY = 'toefl-last-removed-result';
+const REVIEWS_KEY = 'toefl-background-reviews-v1';
+let preparing=false, submitting=false;
+let reviews=[];
+const watchingReviews=new Set();
+
+function persistReviews(){
+  try{localStorage.setItem(REVIEWS_KEY,JSON.stringify(reviews));}catch{toast('Keep this page open to track your feedback.');}
+}
+function renderReviews(){
+  const box=$('#background-reviews');
+  box.hidden=!reviews.length;
+  box.innerHTML=reviews.map(review=>`<div class="review-status"><div><strong>${esc(review.title)}</strong><span>${esc(review.status==='done'?'Feedback ready':review.status==='error'?review.error:review.message||'Grading in the background. You can start another practice.')}</span></div><div>${review.status==='done'?`<button class="button" data-review-open="${esc(review.id)}">View feedback</button>`:''}${review.status==='error'&&review.path?`<button class="button" data-review-retry="${esc(review.id)}">Retry grading</button>`:''}${review.status!=='working'?`<button class="button" data-review-dismiss="${esc(review.id)}" aria-label="Dismiss notification for ${esc(review.title)}">Dismiss</button>`:''}</div></div>`).join('');
+  $$('[data-review-open]',box).forEach(button=>button.onclick=()=>openReview(button.dataset.reviewOpen));
+  $$('[data-review-retry]',box).forEach(button=>button.onclick=async()=>{
+    const review=reviews.find(r=>r.id===button.dataset.reviewRetry);button.disabled=true;
+    try{await submitReview(review.path,review.payload,review.title);reviews=reviews.filter(r=>r!==review);persistReviews();renderReviews();}catch(error){toast(error.message);button.disabled=false;}
+  });
+  $$('[data-review-dismiss]',box).forEach(button=>button.onclick=()=>{reviews=reviews.filter(r=>r.id!==button.dataset.reviewDismiss);persistReviews();renderReviews();});
+}
+async function watchReview(review){
+  if(watchingReviews.has(review.id))return;
+  watchingReviews.add(review.id);
+  try{
+    while(review.status==='working'){
+      try{
+        const job=await api('/api/jobs/'+encodeURIComponent(review.id));
+        review.message=job.message||'Grading in the background';
+        if(job.status==='done'){
+          review.status='done';review.resultId=job.result.id;delete review.payload;delete review.path;
+          toast('Feedback ready: '+review.title);
+        }else if(job.status==='error'){review.status='error';review.error=job.error;}
+      }catch(error){
+        if(error.message==='Job not found'){review.status='error';review.error='This review was interrupted when the app restarted. Retry grading your saved responses.';}
+        else review.message='Waiting for the local app to reconnect…';
+      }
+      persistReviews();renderReviews();
+      if(review.status==='working')await new Promise(resolve=>setTimeout(resolve,1500));
+    }
+  }finally{watchingReviews.delete(review.id);}
+}
+async function submitReview(path,payload,title){
+  const job=await api(path,payload);
+  const review={id:job.jobId,title,path,payload,status:'working',message:'Grading in the background. You can start another practice.'};
+  reviews.push(review);persistReviews();renderReviews();
+  // The monitor only updates its own notification; it never changes the active session.
+  watchReview(review);
+  return review;
+}
+async function openReview(id){
+  if(session||preparing||submitting){toast('Finish or save your current session before opening feedback.');return;}
+  const review=reviews.find(r=>r.id===id);if(!review?.resultId)return;
+  const view=currentView;
+  try{
+    const result=await api('/api/history/'+encodeURIComponent(review.resultId));
+    if(session||preparing||submitting||currentView!==view)return;
+    currentView='history';setNav('history');renderResult(result);
+    reviews=reviews.filter(r=>r!==review);persistReviews();renderReviews();
+  }catch(error){toast(error.message);}
+}
+function restoreReviews(){
+  try{reviews=JSON.parse(localStorage.getItem(REVIEWS_KEY)||'[]');if(!Array.isArray(reviews))reviews=[];}catch{reviews=[];}
+  renderReviews();reviews.filter(r=>r.status==='working').forEach(watchReview);
+}
 
 async function api(path, data) {
   const r = await fetch(path, data === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
@@ -38,7 +101,7 @@ function usable(e) { return !['Listening','Speaking'].includes(e.section) || Boo
 function inPracticePool(e){return e.practiceCategory===practicePool;}
 function setNav(view) { $$('.nav-item').forEach(b=>b.classList.toggle('active',b.dataset.view===view)); }
 async function navigate(view) {
-  if (session) { toast('Finish or save this session before switching views.'); return; }
+  if (session||preparing||submitting) { toast('Finish or save this session before switching views.'); return; }
   currentView=view; setNav(view);
   if(view==='practice') renderPractice();
   if(view==='tests') renderTests();
@@ -156,6 +219,9 @@ async function getMicrophone() {
 }
 function releaseMicrophone(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}}
 async function launchSession(blocks,title,mode,responseMode) {
+  if(session||preparing||submitting)return;
+  preparing=true;
+  try{
   responseMode='record';
   if(blocks.some(b=>b.section==='Speaking')&&responseMode==='record') {
     try{await getMicrophone();}catch(e){throw new Error('Microphone access was not granted. Allow microphone access to practise Speaking.');}
@@ -167,6 +233,7 @@ async function launchSession(blocks,title,mode,responseMode) {
   if(ready.failed.length){releaseMicrophone();throw new Error(`${ready.failed.length} audio files could not be prepared. Check your connection and retry. Cached exercises work offline.`);}
   session={title,mode,responseMode,blocks,block:0,index:0,answers:{},played:[],phase:'instructions',blockDeadline:null,itemDeadline:null,paused:false,started:Date.now(),itemStarted:null};
   saveDraft();setNav('');renderInstructions();
+  }finally{preparing=false;}
 }
 function showStartError(e) { releaseMicrophone();session=null;toast(e.message);navigate(currentView); }
 function saveDraft() { if(session){try{localStorage.setItem(DRAFT_KEY,JSON.stringify(session));}catch{toast('The browser could not save your draft. Keep the session open.');}} }
@@ -182,9 +249,9 @@ async function resumeSession() {
       if(!exercises[activeId]){d.phase='instructions';d.itemDeadline=null;}
     }
     if(d.blocks.some(b=>b.section==='Speaking'))await getMicrophone();
-    d.responseMode='record';session=d;session.paused=false;session.phase=session.phase==='instructions'?'instructions':'question';setNav('');
+    d.responseMode='record';session=d;session.paused=false;session.phase=['instructions','interview-break'].includes(session.phase)?session.phase:'question';setNav('');
     if(session.block>=session.blocks.length){await finishSession();return;}
-    if(session.phase==='instructions')renderInstructions();else{renderQuestion();startClock();}
+    if(session.phase==='instructions')renderInstructions();else if(session.phase==='interview-break'){renderInterviewBreak();startClock();}else{renderQuestion();startClock();}
   }catch(e){toast(e.message);}
 }
 function currentBlock(){return session.blocks[session.block];}
@@ -198,6 +265,7 @@ function renderInstructions() {
   $('#save-exit').onclick=saveAndLeave;
 }
 function renderQuestion() {
+  if(needsInterviewBreak()){startInterviewBreak();return;}
   const e=currentExercise(), b=currentBlock(), a=currentAnswer();selectedChunks=[];
   session.itemStarted=session.itemStarted||Date.now();
   const done=session.blocks.slice(0,session.block).reduce((n,b)=>n+b.ids.length,0)+session.index;
@@ -400,8 +468,37 @@ function renderRecorded(e,a){
   $('#retry-response')?.addEventListener('click',()=>{session.answers[e.id]={id:e.id,response:''};session.phase='question';session.itemStarted=null;session.itemDeadline=null;renderQuestion();});
 }
 function startClock(){clearInterval(interval);interval=setInterval(tick,200);tick();}
+function needsInterviewBreak(){
+  if(currentBlock().section!=='Speaking'||currentExercise().type!=='interview')return false;
+  const first=currentBlock().ids.findIndex(id=>exercises[id]?.type==='interview');
+  return session.index===first&&!session.interviewBreaks?.includes(session.block)&&!session.answers[currentExercise().id]?.recording;
+}
+function startInterviewBreak(){
+  stopPlayback();session.phase='interview-break';session.itemDeadline=null;
+  session.breakStarted=Date.now();session.breakDeadline=session.breakStarted+30000;
+  session.breakSectionRemaining=Math.max(0,(session.blockDeadline||Date.now())-Date.now());
+  saveDraft();renderInterviewBreak();
+}
+function renderInterviewBreak(){
+  content.innerHTML=`<div class="eyebrow">SPEAKING</div><div class="panel interview-break"><h1>Your interview is next.</h1><p class="lead">Take a short break before the first interview prompt. Continue when you are ready, or the interview will begin automatically when the timer reaches zero.</p><div class="timer"><small>BREAK TIME REMAINING</small><strong id="break-timer">${formatTime((session.breakDeadline-Date.now())/1000)}</strong></div><p class="small">Your Speaking time is paused. Once the prompt finishes, recording starts automatically.</p><button class="button primary" id="continue-interview">Continue to interview →</button></div>`;
+  $('#continue-interview').onclick=finishInterviewBreak;
+}
+function finishInterviewBreak(){
+  if(!session||session.phase!=='interview-break')return;
+  session.interviewBreaks=[...(session.interviewBreaks||[]),session.block];
+  session.blockDeadline=Date.now()+session.breakSectionRemaining;
+  session.phase='question';session.itemStarted=null;
+  delete session.breakStarted;delete session.breakDeadline;delete session.breakSectionRemaining;
+  saveDraft();renderQuestion();
+}
 function tick(){
   if(!session||session.phase==='instructions'||session.paused)return;
+  if(session.phase==='interview-break'){
+    const remaining=(session.breakDeadline-Date.now())/1000;
+    if($('#break-timer'))$('#break-timer').textContent=formatTime(remaining);
+    if(remaining<=0)finishInterviewBreak();
+    return;
+  }
   const remaining=((session.itemDeadline||session.blockDeadline)-Date.now())/1000;
   if($('#timer-value'))$('#timer-value').textContent=formatTime(remaining);
   $('#timer')?.classList.toggle('urgent',remaining<=30);
@@ -436,16 +533,20 @@ async function saveAndLeave(){
   if(recorder)currentAnswer().recording=await stopRecording();stopPlayback();clearInterval(interval);saveDraft();releaseMicrophone();session=null;navigate('practice');toast('Session saved. Timed deadlines keep running.');
 }
 async function finishSession(){
-  if(!session)return;
+  if(!session||submitting)return;
+  submitting=true;
+  try{
   clearInterval(interval);stopPlayback();
   if(recorder&&session.block<session.blocks.length)currentAnswer().recording=await stopRecording();
   const submitted=session;
   const items=submitted.blocks.flatMap(b=>b.ids).map(id=>submitted.answers[id]||{id,response:''});
-  saveDraft();releaseMicrophone();loading('Reviewing your responses');
+  saveDraft();releaseMicrophone();loading('Saving your responses for grading');
   try{
-    const job=await api('/api/evaluate',{title:submitted.title,mode:submitted.mode,items});
-    const result=await waitJob(job.jobId);session=null;localStorage.removeItem(DRAFT_KEY);setNav('history');currentView='history';renderResult(result);
-  }catch(error){session=null;toast(error.message);renderPractice();}
+    await submitReview('/api/evaluate',{title:submitted.title,mode:submitted.mode,items},submitted.title);
+    session=null;localStorage.removeItem(DRAFT_KEY);currentView='practice';setNav('practice');renderPractice();
+    toast('Grading continues in the background. You can start another practice session.');
+  }catch(error){session=null;toast(error.message+' Your session is saved; resume it to retry.');renderPractice();}
+  }finally{submitting=false;}
 }
 function renderResources(){
   if(catalog.portableExercisesOnly){content.innerHTML=hero('YOUR EXERCISE LIBRARY','All exercises, ready to practise.','The original documents and full recordings are excluded from this compact edition.')+`<div class="panel">${catalog.resources.map(r=>`<div class="resource-row"><div><h3>${esc(r.title)}</h3><p>${esc(r.section)} · ${r.exerciseCount} exercises</p></div></div>`).join('')}</div>`;return;}
@@ -484,6 +585,7 @@ async function renderHistory(){
   loading('Loading your practice history');
   try{
     const history=await api('/api/history');
+    if(session||preparing||submitting||currentView!=='history')return;
     content.innerHTML=hero('REVIEW, THEN TRY AGAIN','See what is getting clearer.','Your saved answers, recordings, and feedback are here. Compare fresh attempts to see which improvements carry over.')+
       `<div class="panel">${history.length?history.map(h=>`<div class="resource-row history-row" data-history="${esc(h.id)}"><div><h3>${esc(h.title)}</h3><p>${esc(new Date(h.created).toLocaleString('en-US'))} · ${esc(h.mode)}</p></div><span class="small">View feedback →</span></div>`).join(''):'<div class="empty">Your first completed practice session will appear here.</div>'}</div>`;
     const removedId=localStorage.getItem(REMOVED_RESULT_KEY);
@@ -495,7 +597,7 @@ async function renderHistory(){
         catch(error){toast(error.message);if($('#undo-remove'))$('#undo-remove').disabled=false;}
       };
     }
-    $$('[data-history]').forEach(b=>b.onclick=async()=>{try{renderResult(await api('/api/history/'+b.dataset.history));}catch(e){toast(e.message);}});
+    $$('[data-history]').forEach(b=>b.onclick=async()=>{try{const result=await api('/api/history/'+b.dataset.history);if(!session&&!preparing&&!submitting&&currentView==='history')renderResult(result);}catch(e){toast(e.message);}});
   }catch(e){toast(e.message);}
 }
 function resultLabel(g){
@@ -522,8 +624,10 @@ function renderResult(result){
   if(hasIncomplete){
     $('#export-result').insertAdjacentHTML('afterend','<button class="button" id="retry-result">Retry incomplete reviews</button>');
     $('#retry-result').onclick=async()=>{
-      try{loading('Reviewing your saved recordings');const job=await api('/api/history/'+encodeURIComponent(result.id)+'/retry',{});renderResult(await waitJob(job.jobId));}
-      catch(error){toast(error.message);renderResult(result);}
+      $('#retry-result').disabled=true;
+      try{await submitReview('/api/history/'+encodeURIComponent(result.id)+'/retry',{},result.title);toast('Grading continues in the background. You can start another practice.');}
+      catch(error){toast(error.message);}
+      finally{if($('#retry-result'))$('#retry-result').disabled=false;}
     };
   }
   $('#new-practice').onclick=()=>navigate('practice');
@@ -535,8 +639,9 @@ function renderResult(result){
   });
   $$('[data-prompt-correction]').forEach(button=>button.onclick=async()=>{
     const i=Number(button.dataset.promptCorrection),row=result.rows[i],text=$('#prompt-transcript-'+i).value;
-    try{await api('/api/reference',{id:row.id,text});loading('Reviewing with the corrected prompt');const job=await api('/api/evaluate',{title:'Prompt correction · '+result.title,mode:'prompt review',items:[{id:row.id,response:row.response,correctedTranscript:row.response,recording:row.recording}]});renderResult(await waitJob(job.jobId));}
-    catch(error){toast(error.message);renderResult(result);}
+    button.disabled=true;
+    try{await api('/api/reference',{id:row.id,text});await submitReview('/api/evaluate',{title:'Prompt correction · '+result.title,mode:'prompt review',items:[{id:row.id,response:row.response,correctedTranscript:row.response,recording:row.recording}]},'Prompt correction · '+result.title);toast('Reviewing in the background.');}
+    catch(error){toast(error.message);}finally{button.disabled=false;}
   });
   $('#remove-result').onclick=async()=>{
     $('#remove-result').disabled=true;
@@ -546,7 +651,8 @@ function renderResult(result){
   $('#export-result').onclick=()=>{const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='TOEFL-feedback-'+result.id.slice(0,8)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
   $$('[data-regrade]').forEach(button=>button.onclick=async()=>{
     const i=Number(button.dataset.regrade),row=result.rows[i],text=$('#transcript-'+i).value;
-    try{loading('Reviewing your corrected transcript');const job=await api('/api/evaluate',{title:'Corrected transcript · '+result.title,mode:'transcript review',items:[{id:row.id,response:text,correctedTranscript:text,recording:row.recording}]});renderResult(await waitJob(job.jobId));}catch(e){toast(e.message);renderResult(result);}
+    button.disabled=true;
+    try{await submitReview('/api/evaluate',{title:'Corrected transcript · '+result.title,mode:'transcript review',items:[{id:row.id,response:text,correctedTranscript:text,recording:row.recording}]},'Corrected transcript · '+result.title);toast('Reviewing in the background.');}catch(e){toast(e.message);}finally{button.disabled=false;}
   });
 }
 async function engineStatus(){
@@ -559,7 +665,7 @@ async function init(){
     $$('.nav-item').forEach(b=>b.onclick=()=>navigate(b.dataset.view));$('.brand').onclick=e=>{e.preventDefault();navigate('practice');};
     $('#engines-button').onclick=engineStatus;$('#theme-button').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('toefl-theme',document.body.classList.contains('dark')?'dark':'light');};
     $('#stop-app').onclick=async()=>{try{if(session)await saveAndLeave();await api('/api/shutdown',{});content.innerHTML=hero('PRACTICE SAVED','The app is stopped.','Double-click Start TOEFL in the app folder to reopen it. Your saved results remain available.');}catch(e){toast(e.message);}};
-    renderPractice();
+    renderPractice();restoreReviews();
     document.addEventListener('visibilitychange',()=>{if(session&&!document.hidden)tick();});
     window.addEventListener('beforeunload',e=>{if(session){saveDraft();e.preventDefault();e.returnValue='';}});
   }catch(e){content.innerHTML=`<div class="error">${esc(e.message)}. Restart the local app and try again.</div>`;}
