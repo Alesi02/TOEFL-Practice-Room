@@ -11,6 +11,7 @@ import re
 import unicodedata
 from pypdf import PdfReader
 import pdfplumber
+from reading_layout import restore_layout
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = Path(__file__).resolve().parent / 'data'
@@ -19,6 +20,20 @@ EXERCISES = []
 TESTS = []
 RESOURCES = []
 CACHE = {}
+READING_LAYOUT_CACHE = {}
+
+def reading_passage(text, src, page):
+    key = (src, page)
+    if key not in READING_LAYOUT_CACHE:
+        with pdfplumber.open(ROOT / src) as pdf:
+            READING_LAYOUT_CACHE[key] = pdf.pages[page - 1].extract_text(layout=True) or ''
+        # Scanned sources may already have locally recovered layout from OCR.
+        recovered = OUT / 'reading-layout.json'
+        if not READING_LAYOUT_CACHE[key] and recovered.exists():
+            layout = json.loads(recovered.read_text(encoding='utf8')).get(f'{src}:{page}', '')
+            layout = clean_ets(layout)
+            READING_LAYOUT_CACHE[key] = re.sub(r'(?m)^\s*(?:\[.*|dy Like.*)$', '', layout)
+    return restore_layout(flatten(text), READING_LAYOUT_CACHE[key])
 
 def norm(text):
     return unicodedata.normalize('NFKC', text or '').replace('\u00a0', ' ')
@@ -133,7 +148,7 @@ def import_reading(src, task_range, key_range, test=None):
         lead=text[:first.start()].strip()
         lead=re.sub(r'(?m)^Module \d+\s*$', '', lead).strip()
         if lead:
-            passage=flatten(lead);gid=f'{resource(src)["id"]}-reading-p{pno}'
+            passage=reading_passage(lead,src,pno);gid=f'{resource(src)["id"]}-reading-p{pno}'
         for n,prompt,options in qs:
             if n not in keys:
                 REPORT.append(f'{src} p{pno}: Reading question {n} skipped, missing key.');continue
@@ -319,7 +334,7 @@ def import_ets():
                     if lead:
                         if 'Fill' in lead and not lead.startswith('Read'):continue
                         lead=re.sub(r'(?m)^\s*(?:\[.*|dy Like.*)$','',lead)
-                        passage=flatten(lead);gid=f'{tid}-reading-m{module}-p{pno}'
+                        passage=reading_passage(lead,src,pno);gid=f'{tid}-reading-m{module}-p{pno}'
                     for n,prompt,opts in qs:
                         if n<=10 or n>20:continue
                         add(src,pno,'Reading','mcq',f'm{module}-{n}',prompt=prompt,passage=passage,options=opts,answer=d['readingKeys'][module][n-1],explanation=f'Official ETS printed answer key: Reading Module {module}, question {n}.',seconds=60,groupId=gid,testId=tid,module=int(module),ocrConfidence=d['pages'][str(pno)]['confidence'],answerKeyVerified=True)
@@ -402,27 +417,17 @@ def main():
         converted=json.loads(audio_conversion.read_text(encoding='utf-8'))
         EXERCISES.extend(converted['exercises'])
         audio_coverage=converted['coverage']
-    speech_manifest=[]
-    for exercise in EXERCISES:
-        if exercise['section'] in {'Listening','Speaking'} and not exercise.get('audio') and not exercise.get('textPrompt'):
-            stimulus=exercise.get('ttsText') or (exercise.get('prompt') if exercise['type']=='interview' else exercise.get('reference'))
-            if stimulus:
-                relative='toefl-practice/cache/synthesized/'+exercise['id']+'.wav'
-                exercise['audio']=relative
-                exercise['audioAvailability']='synthesized'
-                exercise['audioMethod']='Synthesized voice reading the printed source script; original audio was not supplied.'
-                speech_manifest.append({'id':exercise['id'],'text':stimulus,'path':relative})
-    OUT.mkdir(parents=True,exist_ok=True)
-    (OUT/'speech-manifest.json').write_text(json.dumps(speech_manifest,ensure_ascii=False),encoding='utf-8')
+    # Practice audio must come from a supplied recording. Printed scripts alone
+    # cannot supply Listening or current-format Speaking exercises.
+    EXERCISES[:] = [exercise for exercise in EXERCISES
+                   if exercise['section'] not in {'Listening', 'Speaking'}
+                   or exercise.get('audio') or exercise.get('textPrompt')]
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT/'speech-manifest.json').write_text('[]', encoding='utf8')
     (OUT/'conversion-coverage.json').write_text(json.dumps({'documents':document_coverage,'recordings':audio_coverage},ensure_ascii=False,indent=2),encoding='utf-8')
     for test in TESTS:
-        test['sections']={section:[e['id'] for e in EXERCISES if e.get('testId')==test['id'] and e['section']==section and (section not in {'Listening','Speaking'} or e.get('audio') or e.get('textPrompt'))] for section in ['Reading','Listening','Writing','Speaking']}
+        test['sections']={section:[e['id'] for e in EXERCISES if e.get('testId')==test['id'] and e['section']==section] for section in ['Reading','Listening','Writing','Speaking']}
         test['questionCounts']={section:sum(e.get('questionCount',1) for e in EXERCISES if e['id'] in ids) for section,ids in test['sections'].items()}
-        if test.get('partial'):
-            test['partial']=False
-            test['availableSections']=['Reading','Listening','Writing','Speaking']
-            test['title']=test['title'].replace(' · Reading & Writing',' · synthesized script audio')
-            test['description']='Original printed question order. Missing prompt audio is synthesized from the printed script and labeled; the original voices and adaptive routing are not reproduced.'
     # Validate that all objectively graded answers belong to their visible options,
     # and tag the printed module boundaries without creating alternative routes.
     for e in EXERCISES:
@@ -438,7 +443,7 @@ def main():
     counts=Counter(e['sourceId'] for e in EXERCISES)
     for r in RESOURCES:r['exerciseCount']=counts[r['id']]
     report=dict(resourceCount=len(RESOURCES),exerciseCount=len(EXERCISES),bySection=dict(Counter(e['section'] for e in EXERCISES)),byType=dict(Counter(e['type'] for e in EXERCISES)),audioFiles=sum(r['kind']=='audio' for r in RESOURCES),warnings=REPORT,notes=['All original materials remain linked as local references. Legacy exercises are not converted to the 2026 simulation.','Official ETS paper PDFs were OCR-extracted; objective answer tables, gap paragraphs, and sentence templates were visually verified. Reading and Writing are playable; their unsupplied audio remains reference-only.','The 294 local FLAC files are full practice recordings with no verified sentence/question transcript mapping; indexed as audio drills, not standalone scored questions.','MP3 audio URLs are copied from original PDF link annotations; network access is needed unless cached by the application.','Practice scoring is not an official ETS score. Printed advanced sentence-placement questions retain the publisher’s A–D representation.','Repeat drills use a 12-second response cap; this is a conservative practice cap and is not per-item official timing.'])
-    report['notes']=['Actual older questions and workbook activities are interactive supplementary practice; instructional prose, templates, vocabulary lists and learner notes remain references.','Saved recordings are split into original prompt clips; comparison transcripts are machine generated and can require correction.','Printed scripts without original audio receive clearly labeled synthesized practice audio.','Original source keys drive objective grading; worksheets and open responses receive uncalibrated local feedback.','Prepared full tests select current-format tasks; supplemental historical tasks are excluded.']
+    report['notes']=['Actual older questions and workbook activities are interactive supplementary practice; instructional prose, templates, vocabulary lists and learner notes remain references.','Saved recordings are split into original prompt clips; comparison transcripts are machine generated and can require correction.','Printed scripts without original recordings are excluded from audio exercises; no automatic voice is generated.','Original source keys drive objective grading; worksheets and open responses receive uncalibrated local feedback.','Prepared full tests select current-format tasks; supplemental historical tasks are excluded.']
     report['conversionCoverage']={'documents':len(document_coverage),'recordings':len(audio_coverage),'recordingPrompts':sum(x['prompts'] for x in audio_coverage),'recordingsNeedingReview':sum(x['needsReview'] for x in audio_coverage)}
     OUT.mkdir(parents=True,exist_ok=True)
     (OUT/'catalog.json').write_text(json.dumps(dict(resources=RESOURCES,exercises=EXERCISES,tests=TESTS,importReport=report),ensure_ascii=False,indent=2),encoding='utf8')

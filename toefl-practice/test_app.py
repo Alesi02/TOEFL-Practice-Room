@@ -8,6 +8,21 @@ from unittest.mock import patch
 import server
 
 class GradingTests(unittest.TestCase):
+    def test_generated_audio_is_removed_from_old_banks_and_source_tests(self):
+        from practice_catalog import remove_generated_audio, is_toefl_2026
+        human={'id':'original','section':'Listening','type':'mcq','sourceId':'source','audio':'original.mp3'}
+        generated={**human,'id':'generated','audioAvailability':'synthesized','audio':'assets/compressed.opus'}
+        catalog={'resources':[{'id':'source'}],'exercises':[human,generated],
+                 'tests':[{'id':'source-test','sections':{'Listening':['original','generated']}}]}
+        self.assertFalse(is_toefl_2026(generated))
+        remove_generated_audio(catalog)
+        self.assertEqual([e['id'] for e in catalog['exercises']],['original'])
+        self.assertEqual(catalog['tests'][0]['sections']['Listening'],['original'])
+        self.assertEqual(catalog['tests'][0]['missingItemCounts']['Listening'],1)
+        self.assertTrue(catalog['tests'][0]['partial'])
+        remove_generated_audio(catalog)
+        self.assertEqual(catalog['tests'][0]['missingItemCounts']['Listening'],1)
+
     @classmethod
     def setUpClass(cls):
         server.load_catalog()

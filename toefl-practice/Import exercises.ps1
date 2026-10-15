@@ -16,8 +16,6 @@ if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'models\whisper-base.en\mode
 } else {
     Write-Host 'For automatic recording conversion, install the grading models, then run this importer again.'
 }
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'synthesize_prompts.ps1')
-if ($LASTEXITCODE -ne 0) { throw 'Printed-script audio conversion failed. Install an English Windows speech voice and retry.' }
 & $taskPythonPath (Join-Path $PSScriptRoot 'prepare_audio.py')
 if ($LASTEXITCODE -ne 0) { throw 'Some audio could not be cached. Check your connection and retry.' }
 Write-Host 'Import complete. Restart the app to load the updated exercises.'

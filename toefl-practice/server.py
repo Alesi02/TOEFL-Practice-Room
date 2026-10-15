@@ -54,7 +54,8 @@ def load_catalog():
     path = BASE / "data" / "catalog.json"
     if path.exists():
         CATALOG = json.loads(path.read_text(encoding="utf-8"))
-    from practice_catalog import classify
+    from practice_catalog import classify, remove_generated_audio
+    remove_generated_audio(CATALOG)
     for exercise in CATALOG['exercises']:classify(exercise)
     EXERCISES = {x["id"]: x for x in CATALOG["exercises"]}
     RESOURCES = {x["id"]: x for x in CATALOG["resources"]}

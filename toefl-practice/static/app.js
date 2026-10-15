@@ -65,7 +65,7 @@ function renderPractice() {
   $('#exercise-pool').value=practicePool;
   $('#exercise-pool').onchange=()=>{practicePool=$('#exercise-pool').value;renderPractice();};
   $('#task-type').innerHTML='<option value="all">Mixed '+selectedSection.toLowerCase()+' practice</option>'+[...new Set(catalog.exercises.filter(e=>e.section===selectedSection&&usable(e)&&inPracticePool(e)).map(e=>e.type))].map(t=>`<option value="${t}">${typeName[t]}</option>`).join('');
-  content.insertAdjacentHTML('beforeend','<p class="small">Extra includes essays, workbooks, older task formats, and other activities. Synthesized prompts and machine-transcribed references are labeled. Random and prepared tests use TOEFL 2026 tasks only.</p>');
+  content.insertAdjacentHTML('beforeend','<p class="small">Extra includes essays, workbooks, older task formats, and other activities. Machine-transcribed references are labeled. Audio exercises use supplied recordings. Random and prepared tests use TOEFL 2026 tasks only.</p>');
   $$('[data-choose]').forEach(b=>b.onclick=()=>{selectedSection=b.dataset.choose;renderPractice();});
   $('#start-practice').onclick=()=>startPractice().catch(showStartError);
   bindResume();
@@ -134,7 +134,7 @@ function renderTests() {
     catalog.tests.filter(t=>!t.prepared).map(t=>{
       const counts=Object.entries(t.sections).map(([s,ids])=>`${s}: ${ids.reduce((n,id)=>n+(exercises[id]?.questionCount||1),0)}`);
       const missing=Object.entries(t.missingItemCounts||{}).filter(([s,n])=>n>0);
-      return `<article class="panel test-card"><div class="test-layout"><div><span class="tag">${t.partial?'READING & WRITING':'2026 FORMAT'}</span><h2>${esc(t.title)}</h2><div class="test-parts">${counts.map(c=>`<span>${c}</span>`).join('')}</div><p class="small">${esc(t.description||'Original exercises and answer keys. Fixed section timers.')}</p>${missing.length?`<p class="small">Original audio unavailable: ${missing.map(([s,n])=>`${esc(s)} ${n}`).join(', ')}. Those items are kept as references.</p>`:''}</div><button class="button primary" data-test="${esc(t.id)}">${t.partial?'Begin paper practice':'Begin full test'} →</button></div></article>`;
+      return `<article class="panel test-card"><div class="test-layout"><div><span class="tag">${t.partial?'PARTIAL SOURCE TEST':'2026 FORMAT'}</span><h2>${esc(t.title)}</h2><div class="test-parts">${counts.map(c=>`<span>${c}</span>`).join('')}</div><p class="small">${esc(t.description||'Original exercises and answer keys. Fixed section timers.')}</p>${missing.length?`<p class="small">Original audio unavailable: ${missing.map(([s,n])=>`${esc(s)} ${n}`).join(', ')}. Those items are excluded from this test.</p>`:''}</div><button class="button primary" data-test="${esc(t.id)}">${t.partial?'Begin available sections':'Begin full test'} →</button></div></article>`;
     }).join('')+
     `<p class="mode-note">Writing has separate 6-, 7-, and 10-minute task timers. Repetition uses a 12-second practice cap; interview answers have 45 seconds. There is no pause button in timed mode. Prepared tests combine existing questions.</p>`;
   $$('[data-test]').forEach(b=>b.onclick=()=>{
@@ -173,6 +173,14 @@ function saveDraft() { if(session){try{localStorage.setItem(DRAFT_KEY,JSON.strin
 async function resumeSession() {
   try {
     const d=JSON.parse(localStorage.getItem(DRAFT_KEY));if(!d)return;
+    if(d.blocks.some(block=>block.ids.some(id=>!exercises[id]))){
+      const activeId=d.blocks[d.block]?.ids[d.index];
+      const available=d.blocks.map((block,index)=>({...block,sourceBlock:index,ids:block.ids.filter(id=>exercises[id])})).filter(block=>block.ids.length);
+      const nextBlock=available.findIndex(block=>block.sourceBlock>=d.block);
+      if(nextBlock<0){toast('This saved session has no remaining available exercises. Start a new practice session.');return;}
+      d.blocks=available.map(({sourceBlock,...block})=>block);d.block=nextBlock;d.index=Math.max(0,d.blocks[nextBlock].ids.indexOf(activeId));
+      if(!exercises[activeId]){d.phase='instructions';d.itemDeadline=null;}
+    }
     if(d.blocks.some(b=>b.section==='Speaking'))await getMicrophone();
     d.responseMode='record';session=d;session.paused=false;session.phase=session.phase==='instructions'?'instructions':'question';setNav('');
     if(session.block>=session.blocks.length){await finishSession();return;}
@@ -198,10 +206,7 @@ function renderQuestion() {
   content.innerHTML=`<div class="session-top"><div><div class="eyebrow">${esc(b.section)} / ${esc(b.label)}</div><h2>${esc(typeName[e.type]||b.label)}</h2></div><div class="timer" id="timer"><small id="timer-label">${b.section==='Speaking'?'SECTION':'TIME REMAINING'}</small><strong id="timer-value">${formatTime((session.blockDeadline-Date.now())/1000)}</strong></div></div><div class="progress"><div style="width:${done/all*100}%"></div></div><div class="question-header"><span>Exercise ${number} of ${b.ids.length}</span><span>${session.mode==='timed'?'TIMED PRACTICE':'COACHING MODE'}</span></div><div class="panel question-panel" id="question-body"></div><div class="session-actions"><div>${session.mode==='coach'?'<button class="button" id="pause-session">Pause</button>':''}${['Reading','Writing'].includes(b.section)&&session.index>0?'<button class="button" id="previous-question">← Previous</button>':''}<button class="button" id="end-session">Finish & review</button></div><button class="button primary" id="next-question">${session.index===b.ids.length-1?'Complete task':'Next question'} →</button></div>`;
   const body=$('#question-body');
   if(e.type==='complete_words') {
-    const slots=e.slots||[]; const values=Array.isArray(a.response)?a.response:[];
-    const passage=esc(e.passage||'').replace(/\[(\d+):\s*_+\]/g,(whole,n)=>`<span class="gap-slot"><input class="gap-input" data-gap="${Number(n)-1}" aria-label="Missing letters for word ${n}" maxlength="${slots[Number(n)-1]?.length||30}" value="${esc(values[Number(n)-1]||'')}" autocomplete="off" spellcheck="false"><small>${n}</small></span>`);
-    body.innerHTML=`<p class="small">${esc(e.prompt)}</p><div class="passage" style="max-height:none">${passage}</div>`;
-    $$('[data-gap]').forEach(input=>input.oninput=()=>{const ans=currentAnswer();if(!Array.isArray(ans.response))ans.response=[];ans.response[Number(input.dataset.gap)]=input.value;saveDraft();});
+    renderWordGaps(e,a,body);
   } else if(e.type==='mcq') {
     const question=`<div id="question-options"><p class="question-prompt">${esc(e.prompt)}</p>${(e.options||[]).map(o=>`<label class="option"><input type="radio" name="answer" value="${esc(o.key)}" ${a.response===o.key?'checked':''}><span><strong>${esc(o.key)}.</strong> ${esc(o.text)}</span></label>`).join('')}</div>`;
     if(b.section==='Listening'&&!session.played.includes(e.groupId||e.audio||e.id)) {
@@ -252,6 +257,38 @@ function renderQuestion() {
   $('#pause-session')?.addEventListener('click',togglePause);
   $('#end-session').onclick=()=>finishSession().catch(e=>toast(e.message));
   saveDraft();tick();
+}
+function renderWordGaps(exercise,answer,body) {
+  const values=Array.isArray(answer.response)?answer.response:[];
+  const passage=esc(exercise.passage||'').replace(/([A-Za-z]+)\[(\d+):\s*(_+)\]/g,(whole,prefix,n,underscores)=>{
+    const gap=Number(n)-1,length=exercise.slots?.[gap]?.length||underscores.length;
+    const letters=Array.from({length},(_,i)=>`<input class="gap-letter" data-gap="${gap}" data-letter="${i}" aria-label="Word ${n}, missing letter ${i+1} of ${length}" maxlength="1" value="${esc((values[gap]||'')[i]?.trim()||'')}" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="text">`).join('');
+    return `<span class="gap-word">${prefix}<span class="gap-slot" role="group" aria-label="Word ${n}: ${length} missing letters">${letters}</span><sup class="gap-number" aria-hidden="true">${n}</sup></span>`;
+  });
+  body.innerHTML=`<p class="small">${esc(exercise.prompt)} Each box holds one letter.</p><div class="passage word-gap-passage" style="max-height:none">${passage}</div>`;
+  const inputs=$$('.gap-letter',body);
+  const save=()=>{
+    if(!Array.isArray(answer.response))answer.response=[];
+    const gaps=new Set(inputs.map(input=>input.dataset.gap));
+    for(const gap of gaps)answer.response[Number(gap)]=inputs.filter(input=>input.dataset.gap===gap).map(input=>input.value||' ').join('').trimEnd();
+    saveDraft();
+  };
+  const focus=input=>{if(input){input.focus();input.select();}};
+  inputs.forEach((input,index)=>{
+    input.onfocus=()=>input.select();
+    input.oninput=()=>{input.value=input.value.replace(/[^a-z]/gi,'').slice(0,1);save();if(input.value)focus(inputs[index+1]);};
+    input.onpaste=event=>{
+      event.preventDefault();const letters=event.clipboardData.getData('text').replace(/[^a-z]/gi,'');
+      if(!letters)return;
+      const remaining=inputs.slice(index).filter(next=>next.dataset.gap===input.dataset.gap);
+      remaining.forEach((next,i)=>{if(i<letters.length)next.value=letters[i];});
+      save();focus(inputs[Math.min(index+Math.min(letters.length,remaining.length),inputs.length-1)]);
+    };
+    input.onkeydown=event=>{
+      if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();focus(inputs[index+(event.key==='ArrowLeft'?-1:1)]);}
+      else if(event.key==='Backspace'&&!input.value&&index>0){event.preventDefault();inputs[index-1].value='';save();focus(inputs[index-1]);}
+    };
+  });
 }
 function countWords(v){return String(v||'').trim().split(/\s+/).filter(Boolean).length;}
 function renderSentenceBuilder(exercise,answer,body){
