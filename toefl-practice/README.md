@@ -31,7 +31,7 @@ Before the first Speaking interview prompt, a 30-second break preserves section 
 
 Grading continues in the background while you start another practice session. Progress and feedback notifications appear above the practice area. Completed reviews never replace an active question or clear its saved answers. Pending review tracking survives a page refresh; if the app itself restarts, an interrupted review can be retried from its notification.
 
-The speech decoder recovers a stale import in a fresh local process, preserving the original recording without reinstalling dependencies or sending audio online.
+Every audio review runs in a fresh speech process. The portable Windows edition keeps a verified local runtime and an offline repair archive beside private application data, outside the app's folder. Startup checks its files; missing or damaged dependencies are restored automatically before retrying a review. This uses the already installed runtime and does not download packages during grading. Original recordings are preserved. Reopening Start TOEFL also detects an older running server and loads saved updates once grading has finished.
 
 Twenty deterministic prepared forms and a randomized-test option are generated when the imported pool contains enough verified questions for all four sections. Fixed forms use current task types and approximate section timers. They do not reproduce ETS's adaptive routing or official score conversion.
 

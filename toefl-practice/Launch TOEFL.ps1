@@ -14,6 +14,22 @@ try {
 } catch {
     $taskExistingServer = $null
 }
+$taskExpectedRevision = (Get-FileHash -LiteralPath (Join-Path $taskAppDirectory 'server.py') -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($taskExistingServer.ok -and $taskExistingServer.serverRevision -ne $taskExpectedRevision) {
+    if ($taskExistingServer.activeJobs -gt 0) {
+        Write-Host 'Grading is still running. The saved app update will load on the next launch after grading finishes.'
+    } else {
+        # Reload an older running server instead of silently using yesterday's
+        # code. Saved answers and recordings live outside the server process.
+        Invoke-RestMethod -Method Post -Uri "$taskServerAddress/api/shutdown" -ContentType 'application/json' -Body '{}' -TimeoutSec 5 | Out-Null
+        for ($taskAttempt = 0; $taskAttempt -lt 40; $taskAttempt++) {
+            Start-Sleep -Milliseconds 250
+            try { Invoke-RestMethod -Uri "$taskServerAddress/api/health" -TimeoutSec 1 | Out-Null }
+            catch { break }
+        }
+        $taskExistingServer = $null
+    }
+}
 if (-not $taskExistingServer.ok) {
     $taskServerScript = Join-Path $taskAppDirectory 'server.py'
     Start-Process -FilePath $taskRuntimePython -ArgumentList ('"' + $taskServerScript + '"') -WorkingDirectory $taskAppDirectory -WindowStyle Hidden -RedirectStandardOutput (Join-Path $taskAppDirectory 'data\server.log') -RedirectStandardError (Join-Path $taskAppDirectory 'data\server-error.log')

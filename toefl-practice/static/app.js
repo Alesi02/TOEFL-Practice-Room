@@ -656,7 +656,7 @@ function renderResult(result){
   });
 }
 async function engineStatus(){
-  try{health=await api('/api/health');$('#engine-status').innerHTML=`<p><span class="tag ${health.speechAvailable?'green':''}">${health.speechAvailable?'READY':'MISSING'}</span> Offline speech transcription</p>${health.speechError?`<p class="error">${esc(health.speechError)}</p>`:''}<p><span class="tag ${health.feedbackAvailable?'green':''}">${health.feedbackAvailable?'READY':'MISSING'}</span> Local Writing & interview feedback</p><p class="small">No API key is needed. Models may take a moment to load on the first review. Recognition errors can be corrected before re-evaluation. Pronunciation and intonation are not scored.</p>`;$('#status-dialog').showModal();}catch(e){toast(e.message);}
+  try{health=await api('/api/health');$('#engine-status').innerHTML=`<p><span class="tag ${health.speechAvailable?'green':''}">${health.speechPreparing?'PREPARING':health.speechAvailable?'READY':'MISSING'}</span> Offline speech transcription</p>${health.speechError?`<p class="error">${esc(health.speechError)}</p>`:''}<p><span class="tag ${health.feedbackAvailable?'green':''}">${health.feedbackAvailable?'READY':'MISSING'}</span> Local Writing & interview feedback</p><p class="small">No API key is needed. Models may take a moment to load on the first review. Recognition errors can be corrected before re-evaluation. Pronunciation and intonation are not scored.</p>`;$('#status-dialog').showModal();}catch(e){toast(e.message);}
 }
 async function init(){
   try{

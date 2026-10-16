@@ -79,28 +79,66 @@ class GradingTests(unittest.TestCase):
         self.assertEqual(server.repetition_grade('Welcome to the library.','')['accuracy'],0)
 
     def test_speech_status_detects_a_broken_decoder(self):
-        with patch.object(server.importlib, 'import_module', side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")), patch.object(server,'run_speech_worker',return_value={'speechAvailable':False,'speechError':"No module named 'faster_whisper.audio'"}):
-            status=server.speech_status()
+        with patch.object(server,'SPEECH_STATUS',None), patch.object(server,'SPEECH_CHECK_THREAD',None), patch.object(server,'run_speech_worker',side_effect=RuntimeError("No module named 'faster_whisper.audio'")):
+            status=server.speech_status(wait=True)
         self.assertFalse(status['speechAvailable'])
         self.assertIn('faster_whisper.audio',status['speechError'])
 
     def test_speech_status_recovers_a_stale_host_import(self):
-        with patch.object(server,'USE_SPEECH_WORKER',False), patch.object(server.importlib,'import_module',side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")), patch.object(server,'run_speech_worker',return_value={'speechAvailable':True,'speechError':None}) as worker:
-            self.assertTrue(server.speech_status()['speechAvailable'])
-            self.assertTrue(server.USE_SPEECH_WORKER)
+        with patch.object(server,'SPEECH_STATUS',None), patch.object(server,'SPEECH_CHECK_THREAD',None), patch.object(server.importlib,'import_module',side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")), patch.object(server,'run_speech_worker',return_value={'speechAvailable':True,'speechError':None}) as worker:
+            self.assertTrue(server.speech_status(wait=True)['speechAvailable'])
             worker.assert_called_once_with('status')
 
     def test_transcription_recovers_without_restarting_or_losing_recording(self):
         recovered={'text':'Welcome to the library.','metrics':{'duration':2},'segments':[]}
-        with patch.object(server,'USE_SPEECH_WORKER',False), patch.object(server,'transcribe_local',side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")), patch.object(server,'run_speech_worker',return_value=recovered) as worker:
+        with patch.object(server.os,'environ',{'TOEFL_SPEECH_WORKER':'1'}), patch.object(server,'transcribe_local',side_effect=ModuleNotFoundError("No module named 'faster_whisper.audio'")) as host, patch.object(server,'run_speech_worker',return_value=recovered) as worker:
             self.assertEqual(server.transcribe(Path('saved.webm')),recovered)
             worker.assert_called_once_with('transcribe',path=Path('saved.webm'),samples=None)
-            self.assertTrue(server.USE_SPEECH_WORKER)
+            host.assert_not_called()
 
     def test_speech_recovery_does_not_hide_unrelated_dependency_errors(self):
-        with patch.object(server,'USE_SPEECH_WORKER',False), patch.object(server,'transcribe_local',side_effect=ModuleNotFoundError("No module named 'numpy'",name='numpy')), patch.object(server,'run_speech_worker') as worker:
-            with self.assertRaises(ModuleNotFoundError):server.transcribe(Path('saved.webm'))
-            worker.assert_not_called()
+        with patch.object(server,'run_speech_worker',side_effect=RuntimeError("No module named 'numpy'")):
+            with self.assertRaisesRegex(RuntimeError,'numpy'):server.transcribe(Path('saved.webm'))
+
+    def test_speech_runtime_repairs_itself_offline_when_source_is_damaged(self):
+        from speech_runtime import prepare_runtime
+        with tempfile.TemporaryDirectory() as folder:
+            base,private=Path(folder)/'app',Path(folder)/'private'
+            originals={'.runtime/python.exe':b'embedded interpreter',
+                       '.deps/faster_whisper/audio.py':b'def decode_audio(): pass',
+                       '.deps/faster_whisper/transcribe.py':b'class WhisperModel: pass',
+                       '.deps/av/__init__.py':b'# decoder', 'server.py':b'# worker'}
+            for name,data in originals.items():
+                path=base/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
+            private.mkdir()
+            with patch('speech_runtime.subprocess.run') as probe:
+                probe.return_value.returncode=0
+                ready=prepare_runtime(base,private)
+                probe.assert_called_once()
+            decoder=ready['directory']/'.deps/faster_whisper/audio.py'
+            decoder.unlink()
+            self.assertEqual(prepare_runtime(base,private)['repaired'],1)
+            decoder.write_bytes(b'# damaged cache')
+            (base/'.deps/faster_whisper/audio.py').unlink()
+            (base/'.runtime/python.exe').unlink()
+            repaired=prepare_runtime(base,private)
+            self.assertTrue(repaired['portable'])
+            self.assertEqual(decoder.read_bytes(),originals['.deps/faster_whisper/audio.py'])
+            self.assertEqual(repaired['repaired'],1)
+            self.assertNotIn('import site',(repaired['python'].parent/'python312._pth').read_text())
+
+    def test_partial_installation_does_not_become_the_offline_repair_backup(self):
+        from speech_runtime import make_backup
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder)
+            for name in ('.runtime/python.exe','.deps/faster_whisper/audio.py',
+                         '.deps/faster_whisper/transcribe.py','.deps/av/__init__.py'):
+                path=base/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'partial setup')
+            with patch('speech_runtime.subprocess.run') as probe:
+                probe.return_value.returncode=1
+                with self.assertRaisesRegex(RuntimeError,'initial check'):
+                    make_backup(base,base/'backup.zip')
+            self.assertFalse((base/'backup.zip').exists())
 
     def test_audio_decoder_reads_a_real_wave_file(self):
         with tempfile.TemporaryDirectory() as directory:
