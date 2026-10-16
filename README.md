@@ -39,7 +39,9 @@ Writing and Speaking practice ratings use the official ETS TOEFL iBT **0–5 tas
 
 Listen and Repeat retains word-edit feedback and adds a numerical **content estimate**. Changed meaning is distinguished from minor wording changes; word accuracy is not converted directly into a score. Numerical review of non-verbatim repetition uses the local feedback model. If that model is unavailable, word comparison remains available. Speaking estimates cover recognized content/language; auditory intelligibility, pronunciation, rhythm and intonation are unassessed. Diagnostic subscores are app feedback, not separate official ETS scores. No task estimate is an official or calibrated 1–6 section band. Each new review includes its rubric source, band explanation and complete task scale. Extra essays and worksheets retain their own source instructions and practice grading. Recognition errors can be corrected before re-evaluation.
 
-TOEFL Primary scoring guides apply to a different test. This app uses the linked TOEFL iBT Speaking guide instead. Users can re-evaluate saved responses to use the current grading criteria; existing feedback is retained until re-evaluation.
+TOEFL Primary scoring guides apply to a different test. This app uses the linked TOEFL iBT Speaking guide instead. Users can re-evaluate saved responses to use the current grading criteria; existing numeric scores are retained until re-evaluation.
+
+The grading pipeline separates assessment from presentation. The local model returns scores, rubric findings, response-part references, and small English edits. The app supplies the complete English explanations, advice, and correction reasons; the model does not generate these paragraphs. Feedback is no longer forced into 240-character text fields. Legacy model-written explanations are upgraded from their saved assessment data while preserving numeric scores, answers and recordings, with a backup of the original review.
 
 An exercises-only private edition can retain the functioning question bank and compressed prompt clips while excluding original PDFs, long recordings, conversion scripts and intermediate extraction files. Its first setup installs speech dependencies and downloads grading models once. Personal history remains separate.
 
@@ -51,7 +53,7 @@ Results and recordings are stored per computer under the local application-data 
 
 App files are in `toefl-practice/`. Run `python toefl-practice/server.py` from a source checkout after installing the Python dependencies. Import authorized source materials locally; do not commit the generated catalogs or original media. The portable release builder supports `--public` to exclude source materials.
 
-Run `python -m unittest test_app` from the app folder for server checks. Developers with Node.js can also run `node test_ui.cjs` to check background-grading isolation, draft recovery, and interview timing.
+Run `python -m unittest test_app test_feedback_engine` from the app folder for server, rubric, structured-feedback and history-upgrade checks. Developers with Node.js can also run `node test_ui.cjs` to check background-grading isolation, draft recovery, and interview timing. `feedback_engine.py` owns assessment requests and English presentation; `feedback_rubric.py` owns rating policy; `review_store.py` owns saved reports and summaries; `server.py` orchestrates local services and HTTP routes.
 
 ## References
 

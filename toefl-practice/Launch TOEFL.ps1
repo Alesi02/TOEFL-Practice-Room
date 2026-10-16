@@ -14,7 +14,13 @@ try {
 } catch {
     $taskExistingServer = $null
 }
-$taskExpectedRevision = (Get-FileHash -LiteralPath (Join-Path $taskAppDirectory 'server.py') -Algorithm SHA256).Hash.ToLowerInvariant()
+$taskComponentHashes = @(Get-ChildItem -LiteralPath $taskAppDirectory -Filter '*.py' -File | Sort-Object Name | ForEach-Object {
+    (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+})
+$taskHashAlgorithm = [System.Security.Cryptography.SHA256]::Create()
+try {
+    $taskExpectedRevision = [BitConverter]::ToString($taskHashAlgorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes(($taskComponentHashes -join '')))).Replace('-','').ToLowerInvariant()
+} finally { $taskHashAlgorithm.Dispose() }
 if ($taskExistingServer.ok -and $taskExistingServer.serverRevision -ne $taskExpectedRevision) {
     if ($taskExistingServer.activeJobs -gt 0) {
         Write-Host 'Grading is still running. The saved app update will load on the next launch after grading finishes.'
