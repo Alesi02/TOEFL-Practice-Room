@@ -16,7 +16,6 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
-import wave
 from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -470,27 +469,6 @@ def submit_job(function, executor=None):
     (executor or POOL).submit(work)
     return identifier
 
-def create_clip(payload, job):
-    resource = RESOURCES.get(payload.get("resourceId"))
-    if not resource or resource.get("kind") not in {"audio", "flac"} and not resource["path"].lower().endswith((".flac", ".mp3", ".wav")):
-        raise ValueError("Select an imported audio recording")
-    start, end = float(payload.get("start", 0)), float(payload.get("end", 10))
-    if start < 0 or end <= start or end - start > 60:
-        raise ValueError("Select a clip between 0.2 and 60 seconds")
-    job["message"] = "Transcribing the selected prompt locally"
-    identifier = "clip-" + uuid.uuid4().hex
-    relative = "toefl-practice/cache/" + identifier + ".wav"
-    target = ROOT / relative
-    recognized = run_speech_worker('clip', path=media_path(resource['path']),
-                                   clip={'start': start, 'end': end, 'target': str(target)})
-    kind = "interview" if payload.get("type") == "interview" else "repeat"
-    exercise = {"id": identifier, "section": "Speaking", "type": kind, "title": resource["title"] + " - selected clip", "sourceId": resource["id"], "prompt": recognized["text"] if kind == "interview" else "Listen carefully and repeat exactly what you hear.", "reference": recognized["text"] if kind == "repeat" else "", "audio": relative, "seconds": 45 if kind == "interview" else min(12, max(8, round((end - start) * 1.3))), "edition": "2026", "referenceMethod": "machine-transcribed source clip"}
-    EXERCISES[identifier] = exercise
-    CATALOG["exercises"].append(exercise)
-    ALLOWED_AUDIO.add(relative)
-    (BASE / "data" / "custom-clips.json").write_text(json.dumps([x for x in CATALOG["exercises"] if x["id"].startswith("clip-")], indent=2), encoding="utf-8")
-    return public_exercise(exercise)
-
 def prepare_media(payload, job):
     sources = list(dict.fromkeys(EXERCISES[x].get("audio") for x in payload.get("ids", []) if x in EXERCISES and EXERCISES[x].get("audio")))
     failed = []
@@ -653,8 +631,6 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/evaluate":
                 if not isinstance(payload.get("items"), list): raise ValueError("Responses are missing")
                 return self.json({"jobId": submit_job(lambda job: evaluate_attempt(payload, job))}, 202)
-            if self.path == "/api/create-clip":
-                return self.json({"jobId": submit_job(lambda job: create_clip(payload, job))}, 202)
             if self.path == "/api/prepare":
                 return self.json({"jobId": submit_job(lambda job: prepare_media(payload, job), executor=PREPARE_POOL)}, 202)
             if self.path == "/api/transcribe":
@@ -712,20 +688,6 @@ def speech_worker_main(input_path, output_path):
             import numpy as np
             samples = np.load(request['samples'], allow_pickle=False) if request.get('samples') else None
             result = transcribe_local(path=request.get('path'), samples=samples)
-        elif request['operation'] == 'clip':
-            import numpy as np
-            samples = read_audio(request['path'])
-            clip = request['clip']
-            start, end = float(clip['start']), float(clip['end'])
-            if start < 0 or end <= start or end-start > 60 or end > len(samples)/16000 + 0.1:
-                raise ValueError('The selected clip is outside the recording or exceeds 60 seconds')
-            chunk = samples[int(start*16000):int(end*16000)]
-            result = transcribe_local(samples=chunk)
-            if not result['text']:
-                raise ValueError('No prompt speech was detected in this clip')
-            with wave.open(str(clip['target']), 'wb') as output:
-                output.setnchannels(1); output.setsampwidth(2); output.setframerate(16000)
-                output.writeframes((np.clip(chunk, -1, 1)*32767).astype('<i2').tobytes())
         else:
             raise ValueError('Unknown speech operation')
     except Exception as error:

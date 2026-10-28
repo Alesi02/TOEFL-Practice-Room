@@ -21,3 +21,9 @@
 output/
 tmp/
 .migration-work/
+
+.repo-work/
+Speaking/
+Reading/
+Listening/
+Writing/

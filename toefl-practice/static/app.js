@@ -69,7 +69,7 @@ const descriptions = {Reading:'Complete words, read everyday texts, and work thr
 const baseTimes = {Reading:30,Listening:29,Writing:23,Speaking:8};
 const icons = {Reading:'Aa',Listening:'♫',Writing:'✎',Speaking:'◉'};
 let catalog, exercises, resources, health, currentView='practice', selectedSection='Speaking', session=null, interval=null, stream=null, recorder=null, playback=null, advancing=false;
-let studioResource='', studioDuration=0, selectedChunks=[];
+let selectedChunks=[];
 const content = $('#content');
 const DRAFT_KEY = 'toefl-practice-draft-v1';
 const REMOVED_RESULT_KEY = 'toefl-last-removed-result';
@@ -146,7 +146,7 @@ async function api(path, data) {
 function toast(message) { $('#toast').textContent=message; $('#toast').style.display='block'; clearTimeout(toast.timeout); toast.timeout=setTimeout(()=>$('#toast').style.display='none',6500); }
 function mediaUrl(source) { return '/api/media?source='+encodeURIComponent(source); }
 function formatTime(seconds) { seconds=Math.max(0,Math.ceil(seconds)); return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`; }
-function sourceLink(e) { const r=resources[e.sourceId]; return r?.path ? `<a href="${mediaUrl(r.path)}${e.sourcePage?'#page='+e.sourcePage:''}" target="_blank" rel="noreferrer">Original resource${e.sourcePage?' · page '+e.sourcePage:''} ↗</a>` : r ? `Source: ${esc(r.title)}` : ''; }
+function sourceLink(e) { const resource=resources[e.sourceId]; return resource ? `Source: ${esc(resource.title)}` : ''; }
 function loading(message) { content.innerHTML=`<div class="loading"><div class="spinner"></div><h2>${esc(message)}</h2><p class="small" id="job-message">Working on this computer.</p></div>`; }
 async function waitJob(id) {
   for (;;) {
@@ -165,7 +165,6 @@ async function navigate(view) {
   currentView=view; setNav(view);
   if(view==='practice') renderPractice();
   if(view==='tests') renderTests();
-  if(view==='studio') renderStudio();
   if(view==='resources') renderResources();
   if(view==='history') await renderHistory();
 }
@@ -606,37 +605,14 @@ async function finishSession(){
   }finally{submitting=false;}
 }
 function renderResources(){
-  if(catalog.portableExercisesOnly){content.innerHTML=hero('YOUR EXERCISE LIBRARY','All exercises, ready to practise.','The original documents and full recordings are excluded from this compact edition.')+`<div class="panel">${catalog.resources.map(r=>`<div class="resource-row"><div><h3>${esc(r.title)}</h3><p>${esc(r.section)} · ${r.exerciseCount} exercises</p></div></div>`).join('')}</div>`;return;}
-  content.innerHTML=hero('YOUR MATERIALS, IN ONE PLACE','A library that works with you.','All exercises are built in. All content is native text and tables, and original recordings remain available for audio practice.')+
-    `<div class="resource-toolbar"><input id="resource-search" class="search" aria-label="Search resources" placeholder="Search exercise collections and recordings…"><select id="resource-section" class="search" aria-label="Filter section"><option value="all">All sections</option>${['Reading','Listening','Writing','Speaking','General'].map(s=>`<option>${s}</option>`).join('')}</select><select id="resource-kind" class="search" aria-label="Filter type"><option value="all">All resource types</option><option value="audio">Audio</option><option value="exercises">Exercise collections</option></select></div><div class="panel" id="resource-list"></div><details><summary>About this collection</summary><p class="small">${catalog.resources.length} exercise collections and recordings are indexed. Exercise text, answers and tables are bundled. Use Audio studio to practise selected clips from full recordings.</p>${(catalog.importReport?.warnings||[]).map(w=>`<p class="small">${esc(w)}</p>`).join('')}</details>`;
+  content.innerHTML=hero('YOUR EXERCISE LIBRARY','All exercises, ready to practise.','Every exercise and its required prompt audio are bundled.')+
+    `<div class="resource-toolbar"><input id="resource-search" class="search" aria-label="Search exercise collections" placeholder="Search exercise collections…"><select id="resource-section" class="search" aria-label="Filter section"><option value="all">All sections</option>${['Reading','Listening','Writing','Speaking','General'].map(section=>`<option>${section}</option>`).join('')}</select></div><div class="panel" id="resource-list"></div>`;
   function list(){
-    const needle=$('#resource-search').value.toLowerCase(),section=$('#resource-section').value,kind=$('#resource-kind').value;
-    const selected=catalog.resources.filter(r=>r.title.toLowerCase().includes(needle)&&(section==='all'||r.section===section)&&(kind==='all'||r.kind===kind));
-    $('#resource-list').innerHTML=selected.length?selected.map(r=>`<div class="resource-row"><div><h3>${esc(r.title)}</h3><p><span class="tag ${r.edition==='2026'?'green':'muted'}">${r.edition==='2026'?'2026':'STUDY REFERENCE'}</span>${esc(r.section)} · ${esc(r.kind.toUpperCase())}${r.exerciseCount?' · '+r.exerciseCount+' built-in exercises':''}</p></div><div class="resource-actions">${r.path?`<a class="button" href="${mediaUrl(r.path)}" target="_blank" rel="noreferrer">Open ↗</a>`:'<span class="small">Built-in exercises</span>'}${r.kind==='audio'?`<button class="button" data-studio="${esc(r.id)}">Practise a clip</button>`:''}</div></div>`).join(''):'<div class="empty">No resources match these filters.</div>';
-    $$('[data-studio]').forEach(b=>b.onclick=()=>{studioResource=b.dataset.studio;navigate('studio');});
+    const needle=$('#resource-search').value.toLowerCase(),section=$('#resource-section').value;
+    const selected=catalog.resources.filter(resource=>resource.title.toLowerCase().includes(needle)&&(section==='all'||resource.section===section));
+    $('#resource-list').innerHTML=selected.length?selected.map(resource=>`<div class="resource-row"><div><h3>${esc(resource.title)}</h3><p>${esc(resource.section)} · ${resource.exerciseCount} built-in exercises</p></div></div>`).join(''):'<div class="empty">No collections match these filters.</div>';
   }
-  $('#resource-search').oninput=list;$('#resource-section').onchange=list;$('#resource-kind').onchange=list;list();
-}
-function renderStudio(){
-  if(catalog.portableExercisesOnly){content.innerHTML=hero('EXERCISES ONLY','Your prompts are already prepared.','All imported audio prompts are available in section practice. This compact edition excludes the long source recordings.');return;}
-  const tracks=catalog.resources.filter(r=>r.kind==='audio');if(!studioResource)studioResource=tracks[0]?.id||'';
-  content.innerHTML=hero('USE EVERY RECORDING','Turn an audio clip into practice.','Choose one sentence or one interview question from your saved recordings. The local speech engine prepares that clip as a timed prompt.')+
-    `<div class="panel"><div class="field"><label for="studio-track">YOUR RECORDING</label><select id="studio-track">${tracks.map(r=>`<option value="${esc(r.id)}" ${r.id===studioResource?'selected':''}>${esc(r.title)}</option>`).join('')}</select></div><audio id="studio-player" controls preload="metadata" src="${mediaUrl(resources[studioResource]?.path||'')}"></audio><p class="small" id="studio-time">Play the recording and find the start and end of one prompt.</p><div class="studio-fields"><div class="field"><label for="clip-start">START · SECONDS</label><input id="clip-start" type="number" min="0" step="0.1" value="0"></div><button class="button" id="mark-start">Use current time</button><div class="field"><label for="clip-end">END · SECONDS</label><input id="clip-end" type="number" min="0.2" step="0.1" value="10"></div><button class="button" id="mark-end">Use current time</button><div class="field"><label for="clip-type">TASK</label><select id="clip-type"><option value="repeat">Listen and Repeat</option><option value="interview">Interview question</option></select></div></div><div class="practice-options"><button class="button" id="preview-clip">Preview selection</button><button class="button primary" id="create-clip">Create timed exercise →</button></div><p class="warning">Select only the prompt, without beeps, instructions, or a sample answer. The comparison transcript is machine-generated and may need correction after your attempt. This is a custom practice exercise.</p></div><div id="clip-result"></div>`;
-  $('#studio-track').onchange=()=>{studioResource=$('#studio-track').value;renderStudio();};
-  const player=$('#studio-player');player.onloadedmetadata=()=>{studioDuration=player.duration;$('#studio-time').textContent=`Recording length: ${formatTime(studioDuration)}. Select a clip up to 60 seconds.`;};
-  $('#mark-start').onclick=()=>$('#clip-start').value=player.currentTime.toFixed(1);
-  $('#mark-end').onclick=()=>$('#clip-end').value=player.currentTime.toFixed(1);
-  $('#preview-clip').onclick=()=>{const start=Number($('#clip-start').value),end=Number($('#clip-end').value);player.currentTime=start;player.play();player.ontimeupdate=()=>{if(player.currentTime>=end){player.pause();player.ontimeupdate=null;}};};
-  $('#create-clip').onclick=async()=>{
-    const payload={resourceId:studioResource,start:Number($('#clip-start').value),end:Number($('#clip-end').value),type:$('#clip-type').value};player.pause();
-    try{
-      loading('Preparing your selected prompt');
-      const job=await api('/api/create-clip',payload);const exercise=await waitJob(job.jobId);exercises[exercise.id]=exercise;catalog.exercises.push(exercise);
-      content.innerHTML=hero('YOUR CUSTOM DRILL','Your prompt is ready.','Listen once and respond under the timer. You can inspect the recognized reference after your attempt.')+`<div class="panel"><h3>${esc(typeName[exercise.type])}</h3><p class="small">${exercise.seconds} seconds to respond. Recordings remain local.</p><button class="button primary" id="start-clip">Record my response →</button></div>`;
-      $('#start-clip').onclick=()=>launchSession(makeBlocks([exercise]),exercise.title,'timed','record').catch(showStartError);
-
-    }catch(error){toast(error.message);renderStudio();}
-  };
+  $('#resource-search').oninput=list;$('#resource-section').onchange=list;list();
 }
 async function renderHistory(){
   loading('Loading your practice history');
