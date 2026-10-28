@@ -177,8 +177,6 @@ def prepared_tests(catalog, previous=()):
 
 if __name__=='__main__':
     catalog=json.loads((BASE/'data/catalog.json').read_text(encoding='utf-8'))
-    from practice_catalog import load_practice_banks
-    load_practice_banks(catalog,BASE/'data')
     saved=BASE/'data/prepared-tests.json'
     previous=json.loads(saved.read_text(encoding='utf-8')) if saved.exists() else []
     tests=prepared_tests(catalog,previous)

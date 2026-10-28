@@ -66,13 +66,12 @@ def load_catalog():
     path = BASE / "data" / "catalog.json"
     if path.exists():
         CATALOG = json.loads(path.read_text(encoding="utf-8"))
-    from practice_catalog import classify, remove_generated_audio, load_practice_banks
-    load_practice_banks(CATALOG,BASE/'data')
+    from practice_catalog import classify, remove_generated_audio
     remove_generated_audio(CATALOG)
     for exercise in CATALOG['exercises']:classify(exercise)
     EXERCISES = {x["id"]: x for x in CATALOG["exercises"]}
     RESOURCES = {x["id"]: x for x in CATALOG["resources"]}
-    ALLOWED_AUDIO = {x[key] for x in CATALOG['exercises'] for key in ('audio','exerciseImage') if isinstance(x.get(key), str)}
+    ALLOWED_AUDIO = {exercise['audio'] for exercise in CATALOG['exercises'] if isinstance(exercise.get('audio'), str)}
     overrides=BASE/'data/reference-overrides.json'
     if overrides.exists():
         for identifier,reference in json.loads(overrides.read_text(encoding='utf-8')).items():
@@ -590,18 +589,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(job or {"error": "Job not found"}, 200 if job else 404)
             if parts.path == "/api/media":
                 return self.file(media_path(query.get("source", [""])[0]))
-            if parts.path == '/api/source-page':
-                resource=RESOURCES.get(query.get('sourceId',[''])[0])
-                page=int(query.get('page',['1'])[0])
-                if not resource or resource.get('kind')!='pdf' or not 1<=page<=500:
-                    raise ValueError('Invalid source page')
-                image=BASE/'cache'/f"page-{resource['id']}-{page}.png"
-                if not image.exists():
-                    import pypdfium2
-                    with pypdfium2.PdfDocument(str(media_path(resource['path']))) as document:
-                        if page>len(document):raise ValueError('Source page not found')
-                        document[page-1].render(scale=1.4).to_pil().save(image)
-                return self.file(image,'image/png')
             if parts.path.startswith("/api/recordings/"):
                 return self.file(recording_path(parts.path.rsplit("/", 1)[-1]))
             if parts.path == "/api/history":

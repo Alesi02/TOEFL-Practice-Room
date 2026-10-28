@@ -6,7 +6,7 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 function readingPassageText(passage) {
   const text=String(passage||'');
   if(!/^Read (?:a|an) (?:text chain|text messages?|chat)\b/i.test(text))return text;
-  // Sender names and timestamps identify turns; PDF page breaks do not.
+  // Sender names and timestamps identify turns; Print page breaks do not.
   const flat=text.replace(/\s+/g,' ').trim();
   const senders=[...flat.matchAll(/\b\p{Lu}[\p{L}'’-]*(?: +\p{Lu}[\p{L}'’-]*){1,3} *\(\d{1,2}:\d{2} *(?:[AP]\.?M\.?)?\)/gu)];
   if(!senders.length)return text;
@@ -40,11 +40,27 @@ function renderReadingPassage(exercise) {
 }
 
 function renderReadingStimulus(exercise) {
-  // Preserve forms, schedules and graphic notices from the publisher. Vocabulary
-  // questions use the text version so the referenced phrase can be highlighted.
-  if(exercise.exerciseImage&&!readingFocusTerms(exercise.prompt||'').length)
-    return `<img class="reading-source-image" src="${esc(mediaUrl(exercise.exerciseImage))}" alt="${esc(readingPassageText(exercise.passage))}">`;
   return renderReadingPassage(exercise);
+}
+function renderExerciseText(exercise) {
+  const text=String(exercise.prompt||'');
+  const spans=(exercise.promptFormatting||[]).filter(s=>Number.isInteger(s.start)&&Number.isInteger(s.end)&&s.start>=0&&s.end<=text.length&&s.end>s.start);
+  const breaks=[...new Set([0,text.length,...spans.flatMap(s=>[s.start,s.end])])].sort((a,b)=>a-b);
+  return breaks.slice(0,-1).map((start,i)=>{
+    const end=breaks[i+1],active=spans.filter(s=>s.start<=start&&s.end>=end);
+    let part=esc(text.slice(start,end));
+    if(active.some(s=>s.style==='emphasis'))part=`<em>${part}</em>`;
+    if(active.some(s=>s.style==='underline'))part=`<u>${part}</u>`;
+    return part;
+  }).join('');
+}
+function renderStimulusBlocks(blocks) {
+  return `<div class="native-materials">${blocks.map(block=>{
+    const heading=block.heading?`<h4>${esc(block.heading)}</h4>`:'';
+    if(block.type==='table')return `${heading}<div class="native-table-wrap"><table class="native-table"><thead><tr>${block.columns.map(c=>`<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${block.rows.map(row=>`<tr>${row.map(c=>`<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    if(block.type==='list')return `${heading}<ul>${block.items.map(item=>`<li>${esc(item)}</li>`).join('')}</ul>`;
+    return '';
+  }).join('')}</div>`;
 }
 const typeName = {mcq:'Choose an answer',complete_words:'Complete the Words',sentence:'Build a Sentence',email:'Write an Email',discussion:'Academic Discussion',repeat:'Listen and Repeat',interview:'Take an Interview'};
 Object.assign(typeName,{essay:'Essay practice',worksheet:'Workbook exercise',oral_activity:'Speaking activity'});
@@ -166,7 +182,7 @@ function renderPractice() {
   const total=catalog.exercises.filter(usable).length;
   content.innerHTML=hero('A LITTLE PRACTICE, EVERY DAY','Make room for progress.','Choose a section, practise under a timer, and turn your mistakes into your next practice session.',`<div class="hero-note"><strong>${total}</strong><span>exercises from your resources</span></div>`)+resumeBanner()+
     `<div class="grid">${['Reading','Listening','Writing','Speaking'].map(section=>`<article class="section-card ${selectedSection===section?'selected':''}" data-section="${section}"><div class="section-top"><span class="section-symbol">${icons[section]}</span><span class="section-meta">${baseTimes[section]} min · full section</span></div><h2>${section}</h2><p>${descriptions[section]}</p><div class="section-bottom"><span>${catalog.exercises.filter(e=>e.section===section&&usable(e)&&inPracticePool(e)).length} exercises available</span><button data-choose="${section}">Choose section →</button></div></article>`).join('')}</div>`+
-    `<div class="panel" style="margin-top:22px"><h3>Your practice session</h3><div class="practice-options"><div class="field"><label for="task-type">TASK</label><select id="task-type"><option value="all">Mixed ${selectedSection.toLowerCase()} practice</option>${[...new Set(catalog.exercises.filter(e=>e.section===selectedSection&&usable(e)).map(e=>e.type))].map(t=>`<option value="${t}">${typeName[t]}</option>`).join('')}</select></div><div class="field"><label for="set-size">SET SIZE</label><select id="set-size"><option value="short">Short set</option><option value="section">Full section practice</option><option value="single">One exercise</option></select></div><div class="field"><label for="practice-mode">MODE</label><select id="practice-mode"><option value="timed">Timed · one attempt</option><option value="coach">Coaching · replay & pause</option></select></div><button class="button primary large" id="start-practice">Start practice →</button></div><p class="mode-note">Timed mode hides answers until the end. Full-section timers follow the 2026 base times; short-set timers are practice budgets. Source PDFs cannot reproduce the test's adaptive routing.</p></div>`+
+    `<div class="panel" style="margin-top:22px"><h3>Your practice session</h3><div class="practice-options"><div class="field"><label for="task-type">TASK</label><select id="task-type"><option value="all">Mixed ${selectedSection.toLowerCase()} practice</option>${[...new Set(catalog.exercises.filter(e=>e.section===selectedSection&&usable(e)).map(e=>e.type))].map(t=>`<option value="${t}">${typeName[t]}</option>`).join('')}</select></div><div class="field"><label for="set-size">SET SIZE</label><select id="set-size"><option value="short">Short set</option><option value="section">Full section practice</option><option value="single">One exercise</option></select></div><div class="field"><label for="practice-mode">MODE</label><select id="practice-mode"><option value="timed">Timed · one attempt</option><option value="coach">Coaching · replay & pause</option></select></div><button class="button primary large" id="start-practice">Start practice →</button></div><p class="mode-note">Timed mode hides answers until the end. Full-section timers follow the 2026 base times; short-set timers are practice budgets. This app does not reproduce the test's adaptive routing.</p></div>`+
     `<div class="practice-tip"><span>↗</span><div><h3>Give Speaking a little space every day.</h3><p>Try seven repetition sentences and four interview questions. Review your first attempt before recording an improved version.</p></div></div>`;
   $('#task-type').closest('.field').insertAdjacentHTML('beforebegin','<div class="field"><label for="exercise-pool">MATERIAL</label><select id="exercise-pool"><option value="toefl2026">TOEFL 2026 PRACTICE</option><option value="extra">Extra</option></select></div>');
   $('#exercise-pool').value=practicePool;
@@ -176,7 +192,7 @@ function renderPractice() {
   $$('[data-choose]').forEach(b=>b.onclick=()=>{selectedSection=b.dataset.choose;renderPractice();});
   $('#start-practice').onclick=()=>startPractice().catch(showStartError);
   bindResume();
-  if(!total)content.insertAdjacentHTML('afterbegin','<div class="warning">Add your own authorized practice materials to this app folder, then run Import exercises.cmd. The public download includes app code only.</div>');
+  if(!total)content.insertAdjacentHTML('afterbegin','<div class="warning">The bundled exercise catalog is unavailable. Restore the app files from the repository.</div>');
 }
 function shuffle(values) { return [...values].sort(()=>Math.random()-.5); }
 function freshGroup(list, count) {
@@ -236,7 +252,7 @@ async function startPractice() {
 }
 function renderTests() {
   const fullForms=catalog.tests.filter(t=>t.prepared&&!t.readingOnly);
-  if(!catalog.tests.length){content.innerHTML=hero('YOUR TEST LIBRARY','Add your practice materials.','Prepared and randomized tests become available once you import enough verified exercises for all four sections.')+'<div class="panel"><p>Run Import exercises.cmd after adding supported PDFs and audio, or copy your own private exercise bundle into the app folder.</p><button class="button" id="view-materials">View resources →</button></div>';$('#view-materials').onclick=()=>navigate('resources');return;}
+  if(!catalog.tests.length){content.innerHTML=hero('YOUR TEST LIBRARY','The test catalog is unavailable.','Restore the bundled app files to recover the prepared exercises.')+'<div class="panel"><p>The complete exercise collection is included with the app; no import is needed.</p><button class="button" id="view-materials">View resources →</button></div>';$('#view-materials').onclick=()=>navigate('resources');return;}
   content.innerHTML=hero('REHEARSE THE WHOLE EXPERIENCE','Build your test-day rhythm.','Work through Reading, Listening, Writing, and Speaking in order. Your answers stay hidden until the review.')+
     `<div class="panel test-card"><div class="test-layout"><div><div class="eyebrow">A FRESH COMBINATION</div><h2>Randomized full test</h2><p class="lead" style="font-size:12px">A new mix from your verified exercises: 50 Reading points, 47 Listening questions, 12 Writing items, and 11 Speaking responses.</p></div><button class="button accent" id="random-test" ${fullForms.length?'':'disabled'}>Create random test →</button></div></div><div class="panel" style="margin-bottom:22px"><p class="mode-note">Source-based rehearsals use fixed questions and 2026 base timers. Reading and Listening are not adaptive. Prepared forms share no exercises, Reading passages, or audio groups. Randomized and original source tests can reuse these materials. Speaking uses original prompt audio with automatic response windows.</p></div><h2>${fullForms.length} prepared full tests</h2><p class="small">Each form keeps the same questions when you return. The available bank determines how many complete forms can be made without repeats, up to 20.</p><div class="prepared-grid">${fullForms.map(t=>`<article class="panel prepared-card"><div class="eyebrow">FORM ${esc(t.id.split('-').at(-1))}</div><h3>${esc(t.title)}</h3><p class="small">Reading · Listening<br>Writing · Speaking</p><button class="button" data-test="${esc(t.id)}">Start test →</button></article>`).join('')}</div>`+`<h2 style="margin-top:32px">Original source tests</h2>`+
     catalog.tests.filter(t=>!t.prepared).map(t=>{
@@ -340,15 +356,14 @@ function renderQuestion() {
       $('#next-question').disabled=true;
       return;
     }
-    const exercisePrompt=e.type==='worksheet'&&!resources[e.sourceId]?.path?e.prompt.replace('Of the four underlined choices, one is a pronoun error.','Find the pronoun error in each sentence.'):e.prompt;
-    body.innerHTML=`<div class="question-grid"><div><p class="question-prompt" style="font-size:14px">${esc(exercisePrompt)}</p>${e.passage?`<div class="passage">${esc(e.passage)}</div>`:''}</div><div><label class="sr-only" for="writing-response">Your response</label><textarea class="response" id="writing-response" spellcheck="false" autocomplete="off">${esc(a.response)}</textarea><div class="response-footer"><span id="word-count">${countWords(a.response)} words</span><span>Write in complete sentences.</span></div></div></div>`;
+    body.innerHTML=`<div class="question-grid"><div><p class="question-prompt" style="font-size:14px">${renderExerciseText(e)}</p>${e.passage?`<div class="passage">${esc(e.passage)}</div>`:''}</div><div><label class="sr-only" for="writing-response">Your response</label><textarea class="response" id="writing-response" spellcheck="false" autocomplete="off">${esc(a.response)}</textarea><div class="response-footer"><span id="word-count">${countWords(a.response)} words</span><span>Write in complete sentences.</span></div></div></div>`;
     if(e.type==='worksheet')$('.response-footer span:last-child').textContent='Enter numbered answers. For marking activities, list the selected words and corrections.';
     $('#writing-response').oninput=()=>{a.response=$('#writing-response').value;$('#word-count').textContent=countWords(a.response)+' words';saveDraft();};
   } else if(['repeat','interview','oral_activity'].includes(e.type)) {
     if(a.recording||session.phase==='answered')renderRecorded(e,a);
     else {
       if(e.textPrompt){
-        body.innerHTML=`<p class="question-prompt">${esc(e.prompt)}</p><p class="small">Extra exercise · ${e.seconds||45} seconds to respond</p>${e.sourceImagePage?`<p>${sourceLink(e)}</p>`:''}`;
+        body.innerHTML=`<p class="question-prompt">${renderExerciseText(e)}</p><p class="small">Extra exercise · ${e.seconds||45} seconds to respond</p>`;
         beginSpeakingResponse(e).catch(error=>toast(error.message));
       }else{
         body.innerHTML=audioStage(e.type==='repeat'?'Listen. Then repeat.':'Listen. Then answer.',`${e.seconds||45} seconds to respond · no preparation time`,true);
@@ -361,12 +376,7 @@ function renderQuestion() {
   if(e.audioMethod||e.referenceMethod||e.simulationEligible===false){
     body.insertAdjacentHTML('afterbegin',`<p class="small">${esc(e.audioMethod||e.referenceMethod||(e.simulationEligible===false?'Extra exercise':''))}</p>`);
   }
-  if((e.sourceImagePage||e.type==='worksheet')&&resources[e.sourceId]?.path){
-    const start=e.sourceImagePage||e.sourcePage,end=e.sourcePageEnd||start;
-    const pages=Array.from({length:end-start+1},(_,i)=>`<img loading="lazy" class="source-page" alt="Original exercise page ${start+i}" src="/api/source-page?sourceId=${encodeURIComponent(e.sourceId)}&page=${start+i}" style="width:100%;object-fit:contain">`).join('');
-    body.insertAdjacentHTML('afterbegin',e.type==='worksheet'?`<details><summary>View original exercise pages and formatting</summary>${pages}</details>`:pages);
-  }
-  if(e.exerciseImage&&!(b.section==='Reading'&&e.type==='mcq'&&e.passage))body.insertAdjacentHTML('afterbegin',`<img class="source-page" alt="Exercise illustration" src="${mediaUrl(e.exerciseImage)}" style="max-width:100%">`);
+  if(e.stimulusBlocks?.length)body.querySelector('.question-prompt')?.insertAdjacentHTML('afterend',renderStimulusBlocks(e.stimulusBlocks));
   $('#next-question').onclick=()=>nextQuestion().catch(e=>toast(e.message));
   $('#previous-question')?.addEventListener('click',()=>{stopPlayback();session.index--;session.itemStarted=null;session.phase='question';renderQuestion();saveDraft();});
   $('#pause-session')?.addEventListener('click',togglePause);
@@ -597,12 +607,12 @@ async function finishSession(){
 }
 function renderResources(){
   if(catalog.portableExercisesOnly){content.innerHTML=hero('YOUR EXERCISE LIBRARY','All exercises, ready to practise.','The original documents and full recordings are excluded from this compact edition.')+`<div class="panel">${catalog.resources.map(r=>`<div class="resource-row"><div><h3>${esc(r.title)}</h3><p>${esc(r.section)} · ${r.exerciseCount} exercises</p></div></div>`).join('')}</div>`;return;}
-  content.innerHTML=hero('YOUR MATERIALS, IN ONE PLACE','A library that works with you.','All your original files remain available. Current exercises feed timed practice; older templates and books are study references.')+
-    `<div class="resource-toolbar"><input id="resource-search" class="search" aria-label="Search resources" placeholder="Search your books, question banks, and recordings…"><select id="resource-section" class="search" aria-label="Filter section"><option value="all">All sections</option>${['Reading','Listening','Writing','Speaking','General'].map(s=>`<option>${s}</option>`).join('')}</select><select id="resource-kind" class="search" aria-label="Filter type"><option value="all">All file types</option><option value="audio">Audio</option><option value="pdf">PDF</option></select></div><div class="panel" id="resource-list"></div><details><summary>About the imported materials</summary><p class="small">${catalog.resources.length} original files are indexed. Exercises with verified answers are available in practice. Printed audio scripts without original recordings remain reference material. Use Audio studio to practise selected clips from full recordings. Older templates are available for study.</p>${(catalog.importReport?.warnings||[]).map(w=>`<p class="small">${esc(w)}</p>`).join('')}</details>`;
+  content.innerHTML=hero('YOUR MATERIALS, IN ONE PLACE','A library that works with you.','All exercises are built in. All content is native text and tables, and original recordings remain available for audio practice.')+
+    `<div class="resource-toolbar"><input id="resource-search" class="search" aria-label="Search resources" placeholder="Search exercise collections and recordings…"><select id="resource-section" class="search" aria-label="Filter section"><option value="all">All sections</option>${['Reading','Listening','Writing','Speaking','General'].map(s=>`<option>${s}</option>`).join('')}</select><select id="resource-kind" class="search" aria-label="Filter type"><option value="all">All resource types</option><option value="audio">Audio</option><option value="exercises">Exercise collections</option></select></div><div class="panel" id="resource-list"></div><details><summary>About this collection</summary><p class="small">${catalog.resources.length} exercise collections and recordings are indexed. Exercise text, answers and tables are bundled. Use Audio studio to practise selected clips from full recordings.</p>${(catalog.importReport?.warnings||[]).map(w=>`<p class="small">${esc(w)}</p>`).join('')}</details>`;
   function list(){
     const needle=$('#resource-search').value.toLowerCase(),section=$('#resource-section').value,kind=$('#resource-kind').value;
     const selected=catalog.resources.filter(r=>r.title.toLowerCase().includes(needle)&&(section==='all'||r.section===section)&&(kind==='all'||r.kind===kind));
-    $('#resource-list').innerHTML=selected.length?selected.map(r=>`<div class="resource-row"><div><h3>${esc(r.title)}</h3><p><span class="tag ${r.edition==='2026'?'green':'muted'}">${r.edition==='2026'?'2026':'STUDY REFERENCE'}</span>${esc(r.section)} · ${esc(r.kind.toUpperCase())}${r.exerciseCount?' · '+r.exerciseCount+' imported exercises':''}</p></div><div class="resource-actions"><a class="button" href="${mediaUrl(r.path)}" target="_blank" rel="noreferrer">Open ↗</a>${r.kind==='audio'?`<button class="button" data-studio="${esc(r.id)}">Practise a clip</button>`:''}</div></div>`).join(''):'<div class="empty">No resources match these filters.</div>';
+    $('#resource-list').innerHTML=selected.length?selected.map(r=>`<div class="resource-row"><div><h3>${esc(r.title)}</h3><p><span class="tag ${r.edition==='2026'?'green':'muted'}">${r.edition==='2026'?'2026':'STUDY REFERENCE'}</span>${esc(r.section)} · ${esc(r.kind.toUpperCase())}${r.exerciseCount?' · '+r.exerciseCount+' built-in exercises':''}</p></div><div class="resource-actions">${r.path?`<a class="button" href="${mediaUrl(r.path)}" target="_blank" rel="noreferrer">Open ↗</a>`:'<span class="small">Built-in exercises</span>'}${r.kind==='audio'?`<button class="button" data-studio="${esc(r.id)}">Practise a clip</button>`:''}</div></div>`).join(''):'<div class="empty">No resources match these filters.</div>';
     $$('[data-studio]').forEach(b=>b.onclick=()=>{studioResource=b.dataset.studio;navigate('studio');});
   }
   $('#resource-search').oninput=list;$('#resource-section').onchange=list;$('#resource-kind').onchange=list;list();

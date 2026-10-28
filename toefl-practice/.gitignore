@@ -4,6 +4,7 @@
 **/engines/
 **/__pycache__/
 *.pyc
+*.pdf
 **/history/
 **/recordings/
 **/.local/
@@ -14,13 +15,9 @@
 **/data/prepared-tests.json
 **/data/custom-clips.json
 **/data/reference-overrides.json
-**/data/audio-import-cache/
-**/data/conversion-coverage.json
-**/data/audio-cache-report.json
-**/data/validation_report.json
-**/data/python-*-embed-*.zip
 **/cache/page-*.png
 **/screenshots/
 *.partial
 output/
 tmp/
+.migration-work/
