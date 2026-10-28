@@ -66,7 +66,8 @@ def load_catalog():
     path = BASE / "data" / "catalog.json"
     if path.exists():
         CATALOG = json.loads(path.read_text(encoding="utf-8"))
-    from practice_catalog import classify, remove_generated_audio
+    from practice_catalog import classify, remove_generated_audio, load_practice_banks
+    load_practice_banks(CATALOG,BASE/'data')
     remove_generated_audio(CATALOG)
     for exercise in CATALOG['exercises']:classify(exercise)
     EXERCISES = {x["id"]: x for x in CATALOG["exercises"]}
@@ -81,7 +82,9 @@ def load_catalog():
     if EXERCISES:
         from make_tests import prepared_tests
         try:
-            forms = prepared_tests(CATALOG)
+            saved_forms = BASE / 'data/prepared-tests.json'
+            previous = json.loads(saved_forms.read_text(encoding='utf-8')) if saved_forms.exists() else []
+            forms = prepared_tests(CATALOG, previous)
         except ValueError as error:
             forms = []
             CATALOG.setdefault('importReport', {}).setdefault('warnings', []).append('More verified source exercises are needed to assemble full tests: ' + str(error))

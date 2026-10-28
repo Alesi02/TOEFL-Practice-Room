@@ -446,7 +446,10 @@ def main():
     report['notes']=['Actual older questions and workbook activities are interactive supplementary practice; instructional prose, templates, vocabulary lists and learner notes remain references.','Saved recordings are split into original prompt clips; comparison transcripts are machine generated and can require correction.','Printed scripts without original recordings are excluded from audio exercises; no automatic voice is generated.','Original source keys drive objective grading; worksheets and open responses receive uncalibrated local feedback.','Prepared full tests select current-format tasks; supplemental historical tasks are excluded.']
     report['conversionCoverage']={'documents':len(document_coverage),'recordings':len(audio_coverage),'recordingPrompts':sum(x['prompts'] for x in audio_coverage),'recordingsNeedingReview':sum(x['needsReview'] for x in audio_coverage)}
     OUT.mkdir(parents=True,exist_ok=True)
-    (OUT/'catalog.json').write_text(json.dumps(dict(resources=RESOURCES,exercises=EXERCISES,tests=TESTS,importReport=report),ensure_ascii=False,indent=2),encoding='utf8')
+    catalog=dict(resources=RESOURCES,exercises=EXERCISES,tests=TESTS,importReport=report)
+    from practice_catalog import load_practice_banks
+    load_practice_banks(catalog,OUT)
+    (OUT/'catalog.json').write_text(json.dumps(catalog,ensure_ascii=False,indent=2),encoding='utf8')
     print(json.dumps(report,ensure_ascii=False,indent=2))
 
 if __name__=='__main__':main()

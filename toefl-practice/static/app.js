@@ -2,6 +2,50 @@
 const $ = (s, root=document) => root.querySelector(s);
 const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function readingPassageText(passage) {
+  const text=String(passage||'');
+  if(!/^Read (?:a|an) (?:text chain|text messages?|chat)\b/i.test(text))return text;
+  // Sender names and timestamps identify turns; PDF page breaks do not.
+  const flat=text.replace(/\s+/g,' ').trim();
+  const senders=[...flat.matchAll(/\b\p{Lu}[\p{L}'’-]*(?: +\p{Lu}[\p{L}'’-]*){1,3} *\(\d{1,2}:\d{2} *(?:[AP]\.?M\.?)?\)/gu)];
+  if(!senders.length)return text;
+  const turns=senders.map((sender,i)=>{
+    const message=flat.slice(sender.index+sender[0].length,senders[i+1]?.index??flat.length).trim();
+    return sender[0]+'\n'+message;
+  });
+  return [flat.slice(0,senders[0].index).trim(),...turns].filter(Boolean).join('\n\n');
+}
+
+function readingFocusTerms(prompt) {
+  // Sentence-insertion questions quote entire excerpts, not vocabulary targets.
+  if(/four locations|where.*sentence.*(?:fit|insert)/i.test(prompt))return [];
+  const quotes=/"([^"\n]+)"|“([^”\n]+)”|‘([^’\n]+)’|(?:^|[^\p{L}\p{N}])'([^'\n]+)'/gu;
+  return [...prompt.matchAll(quotes)].map(match=>match.slice(1).find(Boolean).trim())
+    .filter(term=>term&&term.split(/\s+/).length<=8&&!/[.!?]/.test(term));
+}
+
+function renderReadingPassage(exercise) {
+  const text=readingPassageText(exercise.passage),terms=readingFocusTerms(exercise.prompt||'');
+  if(!terms.length)return esc(text);
+  const patterns=[...new Set(terms)].sort((a,b)=>b.length-a.length).map(term=>
+    term.split(/\s+/).map(word=>word.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('\\s+'));
+  const target=new RegExp('(?<![\\p{L}\\p{N}_])(?:'+patterns.join('|')+')(?![\\p{L}\\p{N}_])','giu');
+  let html='',cursor=0;
+  for(const match of text.matchAll(target)){
+    html+=esc(text.slice(cursor,match.index))+'<mark class="reading-focus">'+esc(match[0])+'</mark>';
+    cursor=match.index+match[0].length;
+  }
+  return html+esc(text.slice(cursor));
+}
+
+function renderReadingStimulus(exercise) {
+  // Preserve forms, schedules and graphic notices from the publisher. Vocabulary
+  // questions use the text version so the referenced phrase can be highlighted.
+  if(exercise.exerciseImage&&!readingFocusTerms(exercise.prompt||'').length)
+    return `<img class="reading-source-image" src="${esc(mediaUrl(exercise.exerciseImage))}" alt="${esc(readingPassageText(exercise.passage))}">`;
+  return renderReadingPassage(exercise);
+}
 const typeName = {mcq:'Choose an answer',complete_words:'Complete the Words',sentence:'Build a Sentence',email:'Write an Email',discussion:'Academic Discussion',repeat:'Listen and Repeat',interview:'Take an Interview'};
 Object.assign(typeName,{essay:'Essay practice',worksheet:'Workbook exercise',oral_activity:'Speaking activity'});
 let practicePool='toefl2026';
@@ -143,8 +187,8 @@ function freshGroup(list, count) {
 }
 function practiceSelection(section,type,size) {
   let list=catalog.exercises.filter(e=>e.section===section&&usable(e)&&inPracticePool(e)&&(!e.id.startsWith('clip-'))&&(type==='all'||e.type===type));
-  // Prefer banks over rehearsal materials, keeping full tests fresh.
-  const banks=list.filter(e=>!e.testId); if(banks.length)list=banks;
+  // Reading section practice includes source-test passages as well as banks.
+  if(section!=='Reading') {const banks=list.filter(e=>!e.testId);if(banks.length)list=banks;}
   if(section==='Speaking') {
     if(type==='oral_activity')return shuffle(list).slice(0,size==='single'?1:3);
     if(type==='repeat')return freshGroup(list, size==='single'?1:7);
@@ -191,9 +235,10 @@ async function startPractice() {
   await launchSession(makeBlocks(items,size==='section'),`${selectedSection} · ${type==='all'?'Mixed practice':typeName[type]}`,$('#practice-mode').value,'record');
 }
 function renderTests() {
+  const fullForms=catalog.tests.filter(t=>t.prepared&&!t.readingOnly);
   if(!catalog.tests.length){content.innerHTML=hero('YOUR TEST LIBRARY','Add your practice materials.','Prepared and randomized tests become available once you import enough verified exercises for all four sections.')+'<div class="panel"><p>Run Import exercises.cmd after adding supported PDFs and audio, or copy your own private exercise bundle into the app folder.</p><button class="button" id="view-materials">View resources →</button></div>';$('#view-materials').onclick=()=>navigate('resources');return;}
   content.innerHTML=hero('REHEARSE THE WHOLE EXPERIENCE','Build your test-day rhythm.','Work through Reading, Listening, Writing, and Speaking in order. Your answers stay hidden until the review.')+
-    `<div class="panel test-card"><div class="test-layout"><div><div class="eyebrow">A FRESH COMBINATION</div><h2>Randomized full test</h2><p class="lead" style="font-size:12px">A new mix from your verified exercises: 50 Reading points, 47 Listening questions, 12 Writing items, and 11 Speaking responses.</p></div><button class="button accent" id="random-test" ${catalog.tests.some(t=>t.prepared)?'':'disabled'}>Create random test →</button></div></div><div class="panel" style="margin-bottom:22px"><p class="mode-note">Source-based rehearsals use fixed questions and 2026 base timers. Reading and Listening are not adaptive. Exercises can recur across tests. Speaking uses original prompt audio with automatic response windows.</p></div><h2>${catalog.tests.filter(t=>t.prepared).length} prepared full tests</h2><p class="small">Each form keeps the same question selection when you return to it.</p><div class="prepared-grid">${catalog.tests.filter(t=>t.prepared).map(t=>`<article class="panel prepared-card"><div class="eyebrow">FORM ${esc(t.id.split('-').at(-1))}</div><h3>${esc(t.title)}</h3><p class="small">Reading · Listening<br>Writing · Speaking</p><button class="button" data-test="${esc(t.id)}">Start test →</button></article>`).join('')}</div><h2 style="margin-top:32px">Original source tests</h2>`+
+    `<div class="panel test-card"><div class="test-layout"><div><div class="eyebrow">A FRESH COMBINATION</div><h2>Randomized full test</h2><p class="lead" style="font-size:12px">A new mix from your verified exercises: 50 Reading points, 47 Listening questions, 12 Writing items, and 11 Speaking responses.</p></div><button class="button accent" id="random-test" ${fullForms.length?'':'disabled'}>Create random test →</button></div></div><div class="panel" style="margin-bottom:22px"><p class="mode-note">Source-based rehearsals use fixed questions and 2026 base timers. Reading and Listening are not adaptive. Prepared forms share no exercises, Reading passages, or audio groups. Randomized and original source tests can reuse these materials. Speaking uses original prompt audio with automatic response windows.</p></div><h2>${fullForms.length} prepared full tests</h2><p class="small">Each form keeps the same questions when you return. The available bank determines how many complete forms can be made without repeats, up to 20.</p><div class="prepared-grid">${fullForms.map(t=>`<article class="panel prepared-card"><div class="eyebrow">FORM ${esc(t.id.split('-').at(-1))}</div><h3>${esc(t.title)}</h3><p class="small">Reading · Listening<br>Writing · Speaking</p><button class="button" data-test="${esc(t.id)}">Start test →</button></article>`).join('')}</div>`+`<h2 style="margin-top:32px">Original source tests</h2>`+
     catalog.tests.filter(t=>!t.prepared).map(t=>{
       const counts=Object.entries(t.sections).map(([s,ids])=>`${s}: ${ids.reduce((n,id)=>n+(exercises[id]?.questionCount||1),0)}`);
       const missing=Object.entries(t.missingItemCounts||{}).filter(([s,n])=>n>0);
@@ -276,12 +321,13 @@ function renderQuestion() {
   if(e.type==='complete_words') {
     renderWordGaps(e,a,body);
   } else if(e.type==='mcq') {
-    const question=`<div id="question-options"><p class="question-prompt">${esc(e.prompt)}</p>${(e.options||[]).map(o=>`<label class="option"><input type="radio" name="answer" value="${esc(o.key)}" ${a.response===o.key?'checked':''}><span><strong>${esc(o.key)}.</strong> ${esc(o.text)}</span></label>`).join('')}</div>`;
+    const originNote=e.compatibilityNote?`<p class="small">${esc(e.compatibilityNote)}</p>`:'';
+    const question=originNote+`<div id="question-options"><p class="question-prompt">${esc(e.prompt)}</p>${(e.options||[]).map(o=>`<label class="option"><input type="radio" name="answer" value="${esc(o.key)}" ${a.response===o.key?'checked':''}><span><strong>${esc(o.key)}.</strong> ${esc(o.text)}</span></label>`).join('')}</div>`;
     if(b.section==='Listening'&&!session.played.includes(e.groupId||e.audio||e.id)) {
-      body.innerHTML=audioStage('Listen carefully.','The questions will appear after the audio finishes.');
+      body.innerHTML=originNote+audioStage('Listen carefully.','The questions will appear after the audio finishes.');
       bindPlay(e,()=>{session.played.push(e.groupId||e.audio||e.id);saveDraft();showListeningQuestion(question);});
       $('#next-question').disabled=true;
-    }else if(b.section==='Reading'&&e.passage)body.innerHTML=`<div class="question-grid"><div class="passage">${esc(e.passage)}</div>${question}</div>`;
+    }else if(b.section==='Reading'&&e.passage)body.innerHTML=`<div class="question-grid"><div class="passage">${renderReadingStimulus(e)}</div>${question}</div>`;
     else body.innerHTML=(b.section==='Listening'&&session.mode==='coach'?`<button class="button" id="replay-audio">Replay audio</button>`:'')+question;
     bindOptions();
     $('#replay-audio')?.addEventListener('click',()=>playAudio(e,()=>{}));
@@ -311,6 +357,7 @@ function renderQuestion() {
       $('#next-question').disabled=true;
     }
   }
+  if(e.origin==='original-practice')body.insertAdjacentHTML('afterbegin','<p class="small"><span class="tag">Original practice</span> Written for this app; not an official ETS question.</p>');
   if(e.audioMethod||e.referenceMethod||e.simulationEligible===false){
     body.insertAdjacentHTML('afterbegin',`<p class="small">${esc(e.audioMethod||e.referenceMethod||(e.simulationEligible===false?'Extra exercise':''))}</p>`);
   }
@@ -319,7 +366,7 @@ function renderQuestion() {
     const pages=Array.from({length:end-start+1},(_,i)=>`<img loading="lazy" class="source-page" alt="Original exercise page ${start+i}" src="/api/source-page?sourceId=${encodeURIComponent(e.sourceId)}&page=${start+i}" style="width:100%;object-fit:contain">`).join('');
     body.insertAdjacentHTML('afterbegin',e.type==='worksheet'?`<details><summary>View original exercise pages and formatting</summary>${pages}</details>`:pages);
   }
-  if(e.exerciseImage)body.insertAdjacentHTML('afterbegin',`<img class="source-page" alt="Exercise illustration" src="${mediaUrl(e.exerciseImage)}" style="max-width:100%">`);
+  if(e.exerciseImage&&!(b.section==='Reading'&&e.type==='mcq'&&e.passage))body.insertAdjacentHTML('afterbegin',`<img class="source-page" alt="Exercise illustration" src="${mediaUrl(e.exerciseImage)}" style="max-width:100%">`);
   $('#next-question').onclick=()=>nextQuestion().catch(e=>toast(e.message));
   $('#previous-question')?.addEventListener('click',()=>{stopPlayback();session.index--;session.itemStarted=null;session.phase='question';renderQuestion();saveDraft();});
   $('#pause-session')?.addEventListener('click',togglePause);
