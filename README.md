@@ -14,16 +14,14 @@ A local practice app with 3,270 built-in exercises across Reading, Listening, Wr
 
 Double-click `Start TOEFL.cmd`. Python, dependencies and models do not need to be reinstalled. The prepared exercises and installed grading models run locally.
 
-## Self-contained exercises
+## Practice and feedback
 
-All exercise text, passages, questions, word banks, tables, formatting, answers and grading guides are stored in `toefl-practice/data/catalog.json`. Every existing exercise ID is retained, so saved responses continue to refer to the same exercises. The collection includes 116 original Reading cards and 20 original Writing prompts.
+Practise Reading, Listening, Writing and Speaking with 3,270 built-in exercises. Questions, passages, word banks and tables appear directly in the app. Use the Exercise Library to browse the available collections.
 
-Exercises render as selectable native text and tables. Underlined and italicized choices are preserved. Previously illustrated speaking prompts use descriptions of the depicted activities and transcribed club information. Reading notices and emails use their full text. There are no exercise images, source PDFs, document renderers, OCR tools or import scripts to install or run.
-
-The repository contains only the app, its built-in catalog and the audio files directly used by its exercises. Despite its name, `cache/` holds required exercise clips, not disposable temporary files; additional prompt audio is bundled under `assets/`. Full-length source recordings and Audio Studio are excluded. The Exercise Library lists the bundled exercise collections and retains source attribution. External rubric/source links are optional references and are never loaded to run or grade an exercise.
+Required audio clips are stored in `toefl-practice/exercise-audio/`, with additional prompt audio under `assets/`. Keep these folders with the app so Listening and Speaking exercises can play their prompts.
 
 Prepared and randomized full tests, timers, answer review, microphone recording, saved history, transcript correction and local feedback remain available. Practice estimates are not official TOEFL scores. The app does not reproduce proprietary adaptive routing or score pronunciation and intonation.
 
 ## Local files and privacy
 
-Personal responses and recordings are stored in the local application-data directory and are excluded from Git. Installed models, engines and dependencies are also excluded. No source material is needed for startup, practice, review or grading. Image and PDF extraction utilities and their dependencies have been removed.
+Personal responses and recordings are stored in the local application-data directory and are excluded from Git. Installed models, engines and dependencies are also excluded. No source material is needed for startup, practice, review or grading.

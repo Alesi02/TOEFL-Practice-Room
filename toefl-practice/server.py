@@ -24,7 +24,7 @@ BASE = Path(__file__).resolve().parent
 ROOT = BASE.parent
 sys.path.insert(0, str(BASE / ".deps"))
 sys.path.insert(0, str(BASE))
-for folder in ("data", "cache"):
+for folder in ("data", "exercise-audio"):
     (BASE / folder).mkdir(exist_ok=True)
 storage_config = BASE / 'data/storage-config.json'
 configured_directory = json.loads(storage_config.read_text(encoding='utf-8')).get('privateDirectory') if storage_config.exists() else None
@@ -96,12 +96,14 @@ def normalized(text):
     return re.findall(r"[a-z0-9]+(?:'[a-z]+)?", text)
 
 def media_path(source):
+    if source.startswith("toefl-practice/cache/"):
+        source = source.replace("toefl-practice/cache/", "toefl-practice/exercise-audio/", 1)
     if source.startswith(("http://", "https://")):
         if source not in ALLOWED_AUDIO:
             raise ValueError("Audio is not in the imported catalog")
         import hashlib
         suffix = Path(urllib.parse.urlparse(source).path).suffix or ".mp3"
-        target = BASE / "cache" / (hashlib.sha256(source.encode()).hexdigest() + suffix)
+        target = BASE / "exercise-audio" / (hashlib.sha256(source.encode()).hexdigest() + suffix)
         if not target.exists():
             request = urllib.request.Request(source.replace("http://", "https://", 1), headers={"User-Agent": "Local-TOEFL-Practice/1.0"})
             with urllib.request.urlopen(request, timeout=40) as response:

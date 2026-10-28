@@ -15,7 +15,6 @@
 **/data/prepared-tests.json
 **/data/custom-clips.json
 **/data/reference-overrides.json
-**/cache/page-*.png
 **/screenshots/
 *.partial
 output/
