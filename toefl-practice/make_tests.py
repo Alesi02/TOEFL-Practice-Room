@@ -148,8 +148,43 @@ def reserved_for_tests(catalog, forms):
                          for identifier in identifiers if identifier in items))
 
 
-def prepared_tests(catalog, previous=()):
+def source_tests(catalog):
+    """Keep source order, assigning repeated source material to its first test."""
+    items = {item['id']: item for item in catalog['exercises']}
     forms, reserved = [], set()
+    for original in catalog.get('tests', []):
+        if original.get('prepared'):
+            continue
+        form = copy.deepcopy(original)
+        removed, seen = {}, set()
+        for section, identifiers in form['sections'].items():
+            kept = []
+            for identifier in identifiers:
+                item = items[identifier]
+                key = content_key(item)
+                if reservation_keys(item) & reserved or key in seen:
+                    removed[section] = removed.get(section, 0) + item.get('questionCount', 1)
+                    continue
+                kept.append(identifier)
+                seen.add(key)
+            form['sections'][section] = kept
+        form['questionCounts'] = {
+            section: sum(items[identifier].get('questionCount', 1) for identifier in identifiers)
+            for section, identifiers in form['sections'].items()}
+        if removed:
+            form['partial'] = True
+            form['excludedDuplicateItemCounts'] = removed
+        form['availableSections'] = [section for section, identifiers in form['sections'].items() if identifiers]
+        form['disjoint'] = True
+        if any(form['sections'].values()):
+            forms.append(form)
+            reserved.update(reserved_for_tests(catalog, [form]))
+    return forms
+
+
+def prepared_tests(catalog, previous=()):
+    forms = []
+    reserved = reserved_for_tests(catalog, source_tests(catalog))
     items = {item['id']: item for item in catalog['exercises']}
     # Existing forms keep their questions as the bank grows. Reserve them before
     # assigning new material, so adding resources never reshuffles earlier forms.
@@ -157,6 +192,8 @@ def prepared_tests(catalog, previous=()):
         identifiers=[identifier for section in ('Reading','Listening','Writing','Speaking') for identifier in old.get('sections',{}).get(section,[])]
         if not identifiers or len(set(identifiers))!=len(identifiers) or any(identifier not in items or not is_toefl_2026(items[identifier]) for identifier in identifiers):break
         selected=[items[identifier] for identifier in identifiers]
+        if len({content_key(item) for item in selected}) != len(selected):
+            break
         keys=set().union(*(reservation_keys(item) for item in selected))
         counts={section:sum(item.get('questionCount',1) for item in selected if item['section']==section) for section in ('Reading','Listening','Writing','Speaking')}
         if keys & reserved or counts!={'Reading':50,'Listening':47,'Writing':12,'Speaking':11}:break
@@ -168,17 +205,38 @@ def prepared_tests(catalog, previous=()):
         except ValueError:
             break  # Stop when a full form cannot be filled without reusing material.
         form['disjoint'] = True
-        form['description'] += ' No exercises, Reading passages, or audio groups are shared with another prepared form.'
+        form['description'] += ' No exercises, Reading passages, or audio groups are shared with another test.'
         forms.append(form)
         for identifiers in form['sections'].values():
             for identifier in identifiers:
                 reserved.update(reservation_keys(items[identifier]))
     return forms
 
+
+def assemble_tests(catalog, previous=()):
+    forms = prepared_tests(catalog, previous) + source_tests(catalog)
+    items = {item['id']: item for item in catalog['exercises']}
+    reserved = set()
+    for form in forms:
+        identifiers = [identifier for section in form['sections'].values() for identifier in section]
+        keys = reserved_for_tests(catalog, [form])
+        if keys & reserved or len({content_key(items[identifier]) for identifier in identifiers}) != len(identifiers):
+            raise ValueError('Repeated exercise material in the test library')
+        reserved.update(keys)
+    return forms
+
+
+def choose_full_test(catalog, seed):
+    """Random selection opens an existing form; it never invents an overlapping test."""
+    forms = [form for form in catalog['tests'] if form.get('prepared') and not form.get('partial')]
+    if not forms:
+        raise ValueError('No complete tests are available without repeating exercises')
+    return copy.deepcopy(random.Random(seed).choice(forms))
+
 if __name__=='__main__':
     catalog=json.loads((BASE/'data/catalog.json').read_text(encoding='utf-8'))
     saved=BASE/'data/prepared-tests.json'
     previous=json.loads(saved.read_text(encoding='utf-8')) if saved.exists() else []
-    tests=prepared_tests(catalog,previous)
+    tests=[test for test in assemble_tests(catalog,previous) if test.get('prepared')]
     (BASE/'data/prepared-tests.json').write_text(json.dumps(tests,indent=2),encoding='utf-8')
     print(f'Prepared {len(tests)} complete forms with verified source IDs.')

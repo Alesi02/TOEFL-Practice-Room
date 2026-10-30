@@ -20,7 +20,9 @@ Practise Reading, Listening, Writing and Speaking with 3,270 built-in exercises.
 
 Required audio clips are stored in `toefl-practice/exercise-audio/`, with additional prompt audio under `assets/`. Keep these folders with the app so Listening and Speaking exercises can play their prompts.
 
-Prepared and randomized full tests, timers, answer review, microphone recording, saved history, transcript correction and local feedback remain available. Practice estimates are not official TOEFL scores. The app does not reproduce proprietary adaptive routing or score pronunciation and intonation.
+Full tests use separate exercises: no questions, Reading passages or audio groups are shared between different tests. Original source tests reserve their material first, and repeated source questions appear only in the first test. The remaining bank supplies six prepared full tests. The random option chooses an existing prepared test.
+
+Timers, answer review, microphone recording, saved history, transcript correction and local feedback are available. Practice estimates are not official TOEFL scores. The app does not reproduce proprietary adaptive routing or score pronunciation and intonation.
 
 ## Local files and privacy
 

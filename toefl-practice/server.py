@@ -78,16 +78,17 @@ def load_catalog():
                 EXERCISES[identifier].update(reference if isinstance(reference,dict) else {'reference':reference})
                 EXERCISES[identifier]['transcriptVerified']=True
     if EXERCISES:
-        from make_tests import prepared_tests
+        from make_tests import assemble_tests
         try:
             saved_forms = BASE / 'data/prepared-tests.json'
             previous = json.loads(saved_forms.read_text(encoding='utf-8')) if saved_forms.exists() else []
-            forms = prepared_tests(CATALOG, previous)
+            tests = assemble_tests(CATALOG, previous)
+            forms = [test for test in tests if test.get('prepared')]
         except ValueError as error:
-            forms = []
+            forms, tests = [], []
             CATALOG.setdefault('importReport', {}).setdefault('warnings', []).append('More verified source exercises are needed to assemble full tests: ' + str(error))
         (BASE / 'data/prepared-tests.json').write_text(json.dumps(forms, indent=2), encoding='utf-8')
-        CATALOG['tests'] = forms + CATALOG['tests']
+        CATALOG['tests'] = tests
 
 def normalized(text):
     text = str(text).lower().replace("’", "'")
@@ -639,10 +640,8 @@ class Handler(BaseHTTPRequestHandler):
                 path = recording_path(payload.get("recording"))
                 return self.json({"jobId": submit_job(lambda job: transcribe(path))}, 202)
             if self.path == "/api/random-test":
-                from make_tests import build_test
-                test = build_test(CATALOG, uuid.uuid4().int, 'random-' + uuid.uuid4().hex, 'Randomized full test')
-                test['prepared'] = False
-                return self.json(test)
+                from make_tests import choose_full_test
+                return self.json(choose_full_test(CATALOG, uuid.uuid4().int))
             if self.path == '/api/shutdown':
                 self.json({'ok': True})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
