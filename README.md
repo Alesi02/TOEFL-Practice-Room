@@ -4,11 +4,12 @@ A local practice app with 3,270 built-in exercises across Reading, Listening, Wr
 
 ## First-time setup (once per computer)
 
-1. Install Python 3.12 (64-bit).
-2. Download the latest source ZIP from this repository (Code → Download ZIP), or clone it. The ZIP contains only the current exercise app; a Git clone also includes older repository history and its previously removed files.
-3. Open a terminal in `toefl-practice` and run `python -m pip install --target .deps -r requirements.txt`.
-4. Run `Setup grading models.cmd` once with internet access to install the local Writing-feedback model, speech-transcription model and CPU engine.
-5. Open `Start TOEFL.cmd`, or run `python server.py`, then visit http://127.0.0.1:8765.
+1. Install Python 3.12 (64-bit), keeping the Python launcher enabled in the installer.
+2. Download the latest source ZIP from this repository (Code → Download ZIP) and extract it. The ZIP contains only the current exercise app; a Git clone also includes older repository history and its previously removed files.
+3. Open the `toefl-practice` folder and double-click **`First-time setup.cmd`**. It installs the required dependencies and downloads the local Writing-feedback model, speech-transcription model and CPU engine. Keep the window open until it says **Setup complete**. Internet access is required, and the model downloads can take a while. No terminal commands are needed.
+4. Double-click **`Start TOEFL.cmd`** to open the app in your browser at http://127.0.0.1:8765.
+
+Run first-time setup once for each computer or freshly downloaded copy of the app. If setup is interrupted or fails, run it again; completed model downloads are reused.
 
 ## Every later session
 

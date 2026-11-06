@@ -1,13 +1,8 @@
 param([switch]$NoBrowser)
 $ErrorActionPreference = 'Stop'
 $taskAppDirectory = $PSScriptRoot
-$taskRuntimePython = Join-Path $taskAppDirectory '.runtime\python.exe'
-if (-not (Test-Path -LiteralPath $taskRuntimePython)) {
-    $taskRuntimePython = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
-}
-if (-not (Test-Path -LiteralPath $taskRuntimePython)) {
-    $taskRuntimePython = (Get-Command python -ErrorAction Stop).Source
-}
+. (Join-Path $PSScriptRoot 'python_path.ps1')
+$taskRuntimePython = Get-ToeflPython
 $taskServerAddress = 'http://127.0.0.1:8765'
 try {
     $taskExistingServer = Invoke-RestMethod -Uri "$taskServerAddress/api/health" -TimeoutSec 2
